@@ -121,6 +121,41 @@ blueprint:
           unit_of_measurement: milliseconds
           mode: box
           step: 10
+    # inputs for looping custom actions on long button press events until the corresponding release event is received
+    button_hold_to_dim:
+      name: (Optional) Enable Hold to Dim
+      description: Enable the hold to dim action - requires the Dim Light Entity to be set.
+      default: false
+      selector:
+        boolean:
+    hold_to_dim_entity:
+      name: (Optional) Dim Light Entity
+      description: Light entity to be dimmed when holding
+      default: ''
+      selector:
+        entity:
+          domain: light
+    hold_to_dim_brightness_step:
+      name: (Optional) Dimming Brightness Step
+      description: The value to increment/decrement brightness by
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: slider
+          step: 1
+    helper_debounce_delay:
+      name: (Advanced) Internal Debounce Delay
+      description: By default you should probably leave this at 10, but you might need to lower it for MQTT setups.
+      default: 10
+      selector:
+        number:
+          min: 0
+          max: 5000
+          unit_of_measurement: milliseconds
+          mode: box
+          step: 1
 # Automation schema
 variables:
   # convert input tags to variables, to be used in templates
@@ -130,7 +165,10 @@ variables:
   button_long_repeat_max_loop_repeats: !input button_long_repeat_max_loop_repeats
   helper_last_controller_event: !input helper_last_controller_event
   helper_multi_press_delay: !input helper_multi_press_delay
-  helper_debounce_delay: 10
+  button_hold_to_dim: !input button_hold_to_dim
+  hold_to_dim_entity: !input hold_to_dim_entity
+  hold_to_dim_brightness_step: !input hold_to_dim_brightness_step
+  helper_debounce_delay: !input helper_debounce_delay
   # adjusted debounce delay so that the resulting multi press delay is exactly as specified by the user when running the action, taking also account of debouncing
   # make sure it never goes below the minimum multi press delay
   adjusted_multi_press_delay: "{{ [helper_multi_press_delay - helper_debounce_delay, 100] | max }}"
@@ -141,12 +179,26 @@ variables:
   button_long_release: [long_release, on_long_release]
   # build data to send within a controller event
   controller_topic: !input controller_topic
+  controller_topic_internal: >-
+    {% if controller_topic|length > 1 %}
+    {{ controller_topic_internal }}
+    {% else %}
+    {{ "empty_mqtt_topic_unused" }}
+    {% endif %}
   controller_device: !input controller_device
   controller_id: >-
     {% if controller_topic|length > 1 %}
     {{ controller_topic }}
     {% else %}
     {{controller_device}}
+    {% endif %}
+trigger_variables:
+  controller_topic: !input controller_topic
+  controller_topic_internal: >-
+    {% if controller_topic|length > 1 %}
+    {{ controller_topic_internal }}
+    {% else %}
+    {{ "empty_mqtt_topic_unused" }}
     {% endif %}
 mode: restart
 max_exceeded: silent
@@ -158,13 +210,13 @@ trigger:
     event_data:
       device_id: !input controller_device
   - platform: mqtt
-    topic: !input controller_topic
+    topic: "{{ controller_topic_internal }}"
     payload: press
   - platform: mqtt
-    topic: !input controller_topic
+    topic: "{{ controller_topic_internal }}"
     payload: release
   - platform: mqtt
-    topic: !input controller_topic
+    topic: "{{ controller_topic_internal }}"
     payload: hold
 condition:
   - condition: and
@@ -199,6 +251,7 @@ action:
         {{ trigger.event.data.command }}
         {% endif %}
       trigger_delta: '{{ (as_timestamp(now()) - as_timestamp((states(helper_last_controller_event) | from_json).last_triggered if helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) else "1970-01-01 00:00:00")) * 1000 }}'
+      last_dim_direction: '{{ ((states(helper_last_controller_event) | from_json).last_dim_direction if helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) and "last_dim_direction" in (states(helper_last_controller_event) | from_json) else "up") }}'
   # choose the sequence to run based on the received button event
   - choose:
       - conditions: "{{ trigger_action | string in button_initial_press }}"
@@ -243,7 +296,7 @@ action:
                           - service: input_text.set_value
                             data:
                               entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":"triple_press","last_triggered":now() | string} | to_json }}'
+                              value: '{{ {"trigger_action":"triple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
                           # run the triple press action
                           # fire the event
                           - event: ahb_controller_event
@@ -260,7 +313,7 @@ action:
                           - service: input_text.set_value
                             data:
                               entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":"quadruple_press","last_triggered":now() | string} | to_json }}'
+                              value: '{{ {"trigger_action":"quadruple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
                           # run the quadruple press action
                           # fire the event
                           - event: ahb_controller_event
@@ -277,7 +330,7 @@ action:
                           - service: input_text.set_value
                             data:
                               entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":"quintuple_press","last_triggered":now() | string} | to_json }}'
+                              value: '{{ {"trigger_action":"quintuple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
                           # run the quintuple press action
                           # fire the event
                           - event: ahb_controller_event
@@ -294,7 +347,7 @@ action:
                       - service: input_text.set_value
                         data:
                           entity_id: !input helper_last_controller_event
-                          value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string} | to_json }}'
+                          value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
                       # Optionally skip delay to always fire the first release
                       - choose:
                           - conditions: "{{ button_multi_press_always_fire_first_release }}"
@@ -321,7 +374,7 @@ action:
               - service: input_text.set_value
                 data:
                   entity_id: !input helper_last_controller_event
-                  value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string} | to_json }}'
+                  value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
               # fire the event
               - event: ahb_controller_event
                 event_data:
@@ -337,12 +390,56 @@ action:
           - service: input_text.set_value
             data:
               entity_id: !input helper_last_controller_event
-              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string} | to_json }}'
+              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
           # fire the event only once before looping the action
           - event: ahb_controller_event
             event_data:
               controller: "{{ controller_id }}"
               action: button_long_repeat
+          - choose:
+              - conditions:
+                  - "{{ button_hold_to_dim }}"
+                  - "{{ (hold_to_dim_entity | string | length) > 0 }}"
+                sequence:
+                  - variables:
+                      current_brightness: >-
+                        {% set brightness_list=expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | map(attribute='attributes.brightness') | list %}
+                        {{ [(((brightness_list | sum) / (brightness_list | length)) if (brightness_list | length) > 0 else 0 | int), 255] | min }}
+                  - choose:
+                      - conditions: >-
+                          {{ (last_dim_direction == "down" and current_brightness > 0) or current_brightness >= 255 }}
+                        sequence:
+                          - service: light.turn_on
+                            data:
+                              brightness_step: "{{ -hold_to_dim_brightness_step }}"
+                            target:
+                              entity_id: "{{ hold_to_dim_entity }}"
+                          - service: input_text.set_value
+                            data:
+                              entity_id: !input helper_last_controller_event
+                              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"down"} | to_json }}'
+                      - conditions: >-
+                          {{ last_dim_direction == "up" and current_brightness > 0 or current_brightness < 5 }}
+                        sequence:
+                          - service: light.turn_on
+                            data:
+                              brightness_step: "{{ hold_to_dim_brightness_step }}"
+                            target:
+                              entity_id: "{{ hold_to_dim_entity }}"
+                          - service: input_text.set_value
+                            data:
+                              entity_id: !input helper_last_controller_event
+                              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
+                    default:
+                      - service: light.turn_on
+                        data:
+                          brightness_step: "{{ hold_to_dim_brightness_step }}"
+                        target:
+                          entity_id: "{{ hold_to_dim_entity }}"
+                      - service: input_text.set_value
+                        data:
+                          entity_id: !input helper_last_controller_event
+                          value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
           - choose:
               # if looping is enabled, loop the action for a finite number of iterations
               - conditions: "{{ button_long_repeat_loop }}"
@@ -358,7 +455,7 @@ action:
           - service: input_text.set_value
             data:
               entity_id: !input helper_last_controller_event
-              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string} | to_json }}'
+              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
           # fire the event
           - event: ahb_controller_event
             event_data:
