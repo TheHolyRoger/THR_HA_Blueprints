@@ -121,10 +121,15 @@ blueprint:
           unit_of_measurement: milliseconds
           mode: box
           step: 10
-    # inputs for looping custom actions on long button press events until the corresponding release event is received
     button_hold_to_dim:
       name: (Optional) Enable Hold to Dim
       description: Enable the hold to dim action - requires the Dim Light Entity to be set.
+      default: false
+      selector:
+        boolean:
+    button_toggle_dim_entity_first_press:
+      name: (Optional) Enable Toggle Dim Light Entity First Press
+      description: Enable or disable the default behaviour of toggling the dimmed light entity on the first press
       default: false
       selector:
         boolean:
@@ -166,6 +171,7 @@ variables:
   helper_last_controller_event: !input helper_last_controller_event
   helper_multi_press_delay: !input helper_multi_press_delay
   button_hold_to_dim: !input button_hold_to_dim
+  button_toggle_dim_entity_first_press: !input button_toggle_dim_entity_first_press
   hold_to_dim_entity: !input hold_to_dim_entity
   hold_to_dim_brightness_step: !input hold_to_dim_brightness_step
   helper_debounce_delay: !input helper_debounce_delay
@@ -364,6 +370,23 @@ action:
                         event_data:
                           controller: "{{ controller_id }}"
                           action: button_short_release
+                      # run the toggle dim entity action
+                      - choose:
+                          - conditions:
+                              - "{{ button_toggle_dim_entity_first_press }}"
+                              - "{{ (hold_to_dim_entity | string | length) > 0 }}"
+                            sequence:
+                              - choose:
+                                  - conditions: >-
+                                      {{ expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | list | count > 0 }}
+                                    sequence:
+                                      - service: light.turn_off
+                                        target:
+                                          entity_id: "{{ hold_to_dim_entity }}"
+                                default:
+                                  - service: light.turn_on
+                                    target:
+                                      entity_id: "{{ hold_to_dim_entity }}"
                       # run the custom action
                       - choose:
                           - conditions: []
