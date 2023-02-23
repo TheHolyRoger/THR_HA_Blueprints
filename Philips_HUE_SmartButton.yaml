@@ -121,6 +121,13 @@ blueprint:
           unit_of_measurement: milliseconds
           mode: box
           step: 10
+    hold_to_dim_entity:
+      name: (Optional) Dim Light Entity
+      description: Light entity to be dimmed when holding
+      default: ""
+      selector:
+        entity:
+          domain: light
     button_hold_to_dim:
       name: (Optional) Enable Hold to Dim
       description: Enable the hold to dim action - requires the Dim Light Entity to be set.
@@ -133,13 +140,6 @@ blueprint:
       default: false
       selector:
         boolean:
-    hold_to_dim_entity:
-      name: (Optional) Dim Light Entity
-      description: Light entity to be dimmed when holding
-      default: ''
-      selector:
-        entity:
-          domain: light
     hold_to_dim_brightness_step:
       name: (Optional) Dimming Brightness Step
       description: The value to increment/decrement brightness by
@@ -150,6 +150,14 @@ blueprint:
           max: 255
           mode: slider
           step: 1
+    hold_to_dim_direction_down:
+      name: (Optional) Initially Dim Light Down
+      description: >-
+        Enable initially dimming the light down on hold.
+        Without enabling this the light will get brighter when you first hold the button.
+      default: false
+      selector:
+        boolean:
     helper_debounce_delay:
       name: (Advanced) Internal Debounce Delay
       description: By default you should probably leave this at 10, but you might need to lower it for MQTT setups.
@@ -174,6 +182,7 @@ variables:
   button_toggle_dim_entity_first_press: !input button_toggle_dim_entity_first_press
   hold_to_dim_entity: !input hold_to_dim_entity
   hold_to_dim_brightness_step: !input hold_to_dim_brightness_step
+  hold_to_dim_direction_down: !input hold_to_dim_direction_down
   helper_debounce_delay: !input helper_debounce_delay
   # adjusted debounce delay so that the resulting multi press delay is exactly as specified by the user when running the action, taking also account of debouncing
   # make sure it never goes below the minimum multi press delay
@@ -186,14 +195,14 @@ variables:
   # build data to send within a controller event
   controller_topic: !input controller_topic
   controller_topic_internal: >-
-    {% if controller_topic|length > 1 %}
-    {{ controller_topic_internal }}
+    {% if controller_topic|length > 0 %}
+    {{ controller_topic }}
     {% else %}
     {{ "empty_mqtt_topic_unused" }}
     {% endif %}
   controller_device: !input controller_device
   controller_id: >-
-    {% if controller_topic|length > 1 %}
+    {% if controller_topic|length > 0 %}
     {{ controller_topic }}
     {% else %}
     {{controller_device}}
@@ -201,8 +210,8 @@ variables:
 trigger_variables:
   controller_topic: !input controller_topic
   controller_topic_internal: >-
-    {% if controller_topic|length > 1 %}
-    {{ controller_topic_internal }}
+    {% if controller_topic|length > 0 %}
+    {{ controller_topic }}
     {% else %}
     {{ "empty_mqtt_topic_unused" }}
     {% endif %}
@@ -256,8 +265,12 @@ action:
         {% else %}
         {{ trigger.event.data.command }}
         {% endif %}
-      trigger_delta: '{{ (as_timestamp(now()) - as_timestamp((states(helper_last_controller_event) | from_json).last_triggered if helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) else "1970-01-01 00:00:00")) * 1000 }}'
-      last_dim_direction: '{{ ((states(helper_last_controller_event) | from_json).last_dim_direction if helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) and "last_dim_direction" in (states(helper_last_controller_event) | from_json) else "up") }}'
+      helper_valid: '{{ helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) }}'
+      trigger_delta: '{{ (as_timestamp(now()) - as_timestamp((states(helper_last_controller_event) | from_json).last_triggered if helper_valid else "1970-01-01 00:00:00")) * 1000 }}'
+      default_dim_direction: >-
+        {{ "down" if hold_to_dim_direction_down else "up" }}
+      last_dim_direction: >-
+        {{ ((states(helper_last_controller_event) | from_json).last_dim_direction if helper_valid and "last_dim_direction" in (states(helper_last_controller_event) | from_json) else default_dim_direction) }}
   # choose the sequence to run based on the received button event
   - choose:
       - conditions: "{{ trigger_action | string in button_initial_press }}"
