@@ -191,7 +191,7 @@ variables:
   button_initial_press: [initial_press, on_press, press]
   button_short_release: [short_release, on_short_release, release]
   button_long_repeat: [repeat, on_hold, hold]
-  button_long_release: [long_release, on_long_release]
+  button_long_release: [long_release, on_long_release, release]
   # build data to send within a controller event
   controller_topic: !input controller_topic
   controller_topic_internal: >-
@@ -207,6 +207,8 @@ variables:
     {% else %}
     {{controller_device}}
     {% endif %}
+  is_z2m: >-
+    {{ (controller_topic|length > 0) }}
 trigger_variables:
   controller_topic: !input controller_topic
   controller_topic_internal: >-
@@ -271,6 +273,8 @@ action:
         {{ "down" if hold_to_dim_direction_down else "up" }}
       last_dim_direction: >-
         {{ ((states(helper_last_controller_event) | from_json).last_dim_direction if helper_valid and "last_dim_direction" in (states(helper_last_controller_event) | from_json) else default_dim_direction) }}
+      last_trigger_action: >-
+        {{ ((states(helper_last_controller_event) | from_json).trigger_action if helper_valid and "trigger_action" in (states(helper_last_controller_event) | from_json) else "None") }}
   # choose the sequence to run based on the received button event
   - choose:
       - conditions: "{{ trigger_action | string in button_initial_press }}"
@@ -284,7 +288,9 @@ action:
           - choose:
               - conditions: []
                 sequence: !input action_button_initial_press
-      - conditions: "{{ trigger_action | string in button_short_release }}"
+      - conditions:
+          - "{{ trigger_action | string in button_short_release }}"
+          - "{{ not is_z2m or (last_trigger_action | string not in button_long_repeat) }}"
         sequence:
           - choose:
               # if multi press events are enabled
@@ -443,7 +449,7 @@ action:
                         {{ [(((brightness_list | sum) / (brightness_list | length)) if (brightness_list | length) > 0 else 0 | int), 255] | min }}
                   - choose:
                       - conditions: >-
-                          {{ (last_dim_direction == "down" and current_brightness > 0) or current_brightness >= 255 }}
+                          {{ (last_dim_direction == "down" and current_brightness > 0) or current_brightness >= 250 }}
                         sequence:
                           - service: light.turn_on
                             data:
@@ -455,7 +461,19 @@ action:
                               entity_id: !input helper_last_controller_event
                               value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"down"} | to_json }}'
                       - conditions: >-
-                          {{ last_dim_direction == "up" and current_brightness > 0 or current_brightness < 5 }}
+                          {{ current_brightness == 0 }}
+                        sequence:
+                          - service: light.turn_on
+                            data:
+                              brightness: "{{ hold_to_dim_brightness_step }}"
+                            target:
+                              entity_id: "{{ hold_to_dim_entity }}"
+                          - service: input_text.set_value
+                            data:
+                              entity_id: !input helper_last_controller_event
+                              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
+                      - conditions: >-
+                          {{ (last_dim_direction == "up" and current_brightness < 255) or current_brightness < 5 }}
                         sequence:
                           - service: light.turn_on
                             data:
