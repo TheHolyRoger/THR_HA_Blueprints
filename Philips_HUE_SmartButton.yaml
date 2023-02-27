@@ -99,7 +99,7 @@ blueprint:
     button_multi_press_enabled:
       name: (Optional) Enable button multi press events
       description: Choose whether or not to enable the virtual multi press events for the button. Turn this on if you are providing actions for the button double/triple/quadruple/quintuple press events.
-      default: false
+      default: true
       selector:
         boolean:
     # inputs for enabling double press events
@@ -422,6 +422,23 @@ action:
                 event_data:
                   controller: "{{ controller_id }}"
                   action: button_short_release
+              # run the toggle dim entity action
+              - choose:
+                  - conditions:
+                      - "{{ button_toggle_dim_entity_first_press }}"
+                      - "{{ (hold_to_dim_entity | string | length) > 0 }}"
+                    sequence:
+                      - choose:
+                          - conditions: >-
+                              {{ expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | list | count > 0 }}
+                            sequence:
+                              - service: light.turn_off
+                                target:
+                                  entity_id: "{{ hold_to_dim_entity }}"
+                        default:
+                          - service: light.turn_on
+                            target:
+                              entity_id: "{{ hold_to_dim_entity }}"
               # run the custom action
               - choose:
                   - conditions: []
