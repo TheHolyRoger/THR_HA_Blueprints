@@ -251,247 +251,279 @@ condition:
         {%- endset -%}
         {{ trigger_action not in ["","None"] }}
 action:
-  # debouncing - when automation is triggered multiple times, the last automation run is the one which completes execution, due to mode restart
-  # therefore previous runs must wait for the debounce delay before executing any other action
-  # if the delay expires and the automation is still running it means it's the last run and execution can continue
-  - delay:
-      milliseconds: "{{ helper_debounce_delay }}"
-  # extract button event from the trigger
-  # provide a single string value to check against
-  - variables:
-      trigger_action: >-
-        {% if "payload" in trigger %}
-        {{ trigger.payload }}
-        {% elif "type" in trigger.event.data %}
-        {{ trigger.event.data.type }}
-        {% else %}
-        {{ trigger.event.data.command }}
-        {% endif %}
-      helper_valid: '{{ helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) }}'
-      trigger_delta: '{{ (as_timestamp(now()) - as_timestamp((states(helper_last_controller_event) | from_json).last_triggered if helper_valid else "1970-01-01 00:00:00")) * 1000 }}'
-      default_dim_direction: >-
-        {{ "down" if hold_to_dim_direction_down else "up" }}
-      last_dim_direction: >-
-        {{ ((states(helper_last_controller_event) | from_json).last_dim_direction if helper_valid and "last_dim_direction" in (states(helper_last_controller_event) | from_json) else default_dim_direction) }}
-      last_trigger_action: >-
-        {{ ((states(helper_last_controller_event) | from_json).trigger_action if helper_valid and "trigger_action" in (states(helper_last_controller_event) | from_json) else "None") }}
-  # choose the sequence to run based on the received button event
+  # Check config
   - choose:
-      - conditions: "{{ trigger_action | string in button_initial_press }}"
-        sequence:
-          # fire the event
-          - event: ahb_controller_event
-            event_data:
-              controller: "{{ controller_id }}"
-              action: button_initial_press
-          # run the custom action
-          - choose:
-              - conditions: []
-                sequence: !input action_button_initial_press
       - conditions:
-          - "{{ trigger_action | string in button_short_release }}"
-          - "{{ not is_z2m or (last_trigger_action | string not in button_long_repeat) }}"
+          - >-
+            {{ (helper_last_controller_event | length < 1) or state_attr(helper_last_controller_event, 'max') < 500 }}
         sequence:
-          - choose:
-              # if multi press events are enabled
-              - conditions: "{{ button_multi_press_enabled }}"
-                sequence:
-                  - choose:
-                      # if previous event was a short press
-                      - conditions: "{{ trigger_action | string in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}"
-                        sequence:
-                          # store the double press event in the last controller event helper
-                          - service: input_text.set_value
-                            data:
-                              entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":"double_press","last_triggered":now() | string} | to_json }}'
-                          # run the double press action
-                          # fire the event
-                          - event: ahb_controller_event
-                            event_data:
-                              controller: "{{ controller_id }}"
-                              action: button_double_press
-                          # run the custom action
-                          - choose:
-                              - conditions: []
-                                sequence: !input action_button_double_press
-                      - conditions: '{{ "double_press" in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}'
-                        sequence:
-                          # store the triple press event in the last controller event helper
-                          - service: input_text.set_value
-                            data:
-                              entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":"triple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
-                          # run the triple press action
-                          # fire the event
-                          - event: ahb_controller_event
-                            event_data:
-                              controller: "{{ controller_id }}"
-                              action: button_triple_press
-                          # run the custom action
-                          - choose:
-                              - conditions: []
-                                sequence: !input action_button_triple_press
-                      - conditions: '{{ "triple_press" in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}'
-                        sequence:
-                          # store the quadruple press event in the last controller event helper
-                          - service: input_text.set_value
-                            data:
-                              entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":"quadruple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
-                          # run the quadruple press action
-                          # fire the event
-                          - event: ahb_controller_event
-                            event_data:
-                              controller: "{{ controller_id }}"
-                              action: button_quadruple_press
-                          # run the custom action
-                          - choose:
-                              - conditions: []
-                                sequence: !input action_button_quadruple_press
-                      - conditions: '{{ "quadruple_press" in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}'
-                        sequence:
-                          # store the quintuple press event in the last controller event helper
-                          - service: input_text.set_value
-                            data:
-                              entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":"quintuple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
-                          # run the quintuple press action
-                          # fire the event
-                          - event: ahb_controller_event
-                            event_data:
-                              controller: "{{ controller_id }}"
-                              action: button_quintuple_press
-                          # run the custom action
-                          - choose:
-                              - conditions: []
-                                sequence: !input action_button_quintuple_press
-                    # previous event was not a short press
-                    default:
-                      # update helper
-                      - service: input_text.set_value
-                        data:
-                          entity_id: !input helper_last_controller_event
-                          value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
-                      # Optionally skip delay to always fire the first release
+          - service: persistent_notification.create
+            data:
+              message: >-
+                Invalid Config: "Helper - Last Controller Event" is not set or too short.
+                Set max length to 500 or more.
+              title: Philips Hue Smart Button
+      - conditions:
+          - >-
+            {{ is_z2m and ((controller_device | length) > 0) }}
+        sequence:
+          - service: persistent_notification.create
+            data:
+              message: >-
+                Invalid Config: Cannot have both MQTT topic and Controller Device set.
+              title: Philips Hue Smart Button
+    default:
+      # debouncing - when automation is triggered multiple times, the last automation run is the one which completes execution, due to mode restart
+      # therefore previous runs must wait for the debounce delay before executing any other action
+      # if the delay expires and the automation is still running it means it's the last run and execution can continue
+      - delay:
+          milliseconds: "{{ helper_debounce_delay }}"
+      # extract button event from the trigger
+      # provide a single string value to check against
+      - variables:
+          trigger_action: >-
+            {% if "payload" in trigger %}
+            {{ trigger.payload }}
+            {% elif "type" in trigger.event.data %}
+            {{ trigger.event.data.type }}
+            {% else %}
+            {{ trigger.event.data.command }}
+            {% endif %}
+          helper_valid: '{{ helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) }}'
+          trigger_delta: '{{ (as_timestamp(now()) - as_timestamp((states(helper_last_controller_event) | from_json).last_triggered if helper_valid else "1970-01-01 00:00:00")) * 1000 }}'
+          default_dim_direction: >-
+            {{ "down" if hold_to_dim_direction_down else "up" }}
+          last_dim_direction: >-
+            {{ ((states(helper_last_controller_event) | from_json).last_dim_direction if helper_valid and "last_dim_direction" in (states(helper_last_controller_event) | from_json) else default_dim_direction) }}
+          last_trigger_action: >-
+            {{ ((states(helper_last_controller_event) | from_json).trigger_action if helper_valid and "trigger_action" in (states(helper_last_controller_event) | from_json) else "None") }}
+      # choose the sequence to run based on the received button event
+      - choose:
+          - conditions: "{{ trigger_action | string in button_initial_press }}"
+            sequence:
+              # fire the event
+              - event: ahb_controller_event
+                event_data:
+                  controller: "{{ controller_id }}"
+                  action: button_initial_press
+              # run the custom action
+              - choose:
+                  - conditions: []
+                    sequence: !input action_button_initial_press
+          - conditions:
+              - "{{ trigger_action | string in button_short_release }}"
+              - "{{ not is_z2m or (last_trigger_action | string not in button_long_repeat) }}"
+            sequence:
+              - choose:
+                  # if multi press events are enabled
+                  - conditions: "{{ button_multi_press_enabled }}"
+                    sequence:
                       - choose:
-                          - conditions: "{{ button_multi_press_always_fire_first_release }}"
-                            sequence: []
-                        default:
-                          # wait for the multi press event to occur, within the provided delay
-                          # if the second press is received, automation is restarted
-                          - delay:
-                              milliseconds: "{{ adjusted_multi_press_delay }}"
-                          # if delay expires, no second press was received, therefore run the short press action
-                          # run the short press action
-                      # fire the event
-                      - event: ahb_controller_event
-                        event_data:
-                          controller: "{{ controller_id }}"
-                          action: button_short_release
-                      # run the toggle dim entity action
-                      - choose:
-                          - conditions:
-                              - "{{ button_toggle_dim_entity_first_press }}"
-                              - "{{ (hold_to_dim_entity | string | length) > 0 }}"
+                          # if previous event was a short press
+                          - conditions: "{{ trigger_action | string in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}"
                             sequence:
+                              # store the double press event in the last controller event helper
+                              - service: input_text.set_value
+                                data:
+                                  entity_id: !input helper_last_controller_event
+                                  value: '{{ {"trigger_action":"double_press","last_triggered":now() | string} | to_json }}'
+                              # run the double press action
+                              # fire the event
+                              - event: ahb_controller_event
+                                event_data:
+                                  controller: "{{ controller_id }}"
+                                  action: button_double_press
+                              # run the custom action
                               - choose:
-                                  - conditions: >-
-                                      {{ expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | list | count > 0 }}
-                                    sequence:
-                                      - service: light.turn_off
+                                  - conditions: []
+                                    sequence: !input action_button_double_press
+                          - conditions: '{{ "double_press" in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}'
+                            sequence:
+                              # store the triple press event in the last controller event helper
+                              - service: input_text.set_value
+                                data:
+                                  entity_id: !input helper_last_controller_event
+                                  value: '{{ {"trigger_action":"triple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
+                              # run the triple press action
+                              # fire the event
+                              - event: ahb_controller_event
+                                event_data:
+                                  controller: "{{ controller_id }}"
+                                  action: button_triple_press
+                              # run the custom action
+                              - choose:
+                                  - conditions: []
+                                    sequence: !input action_button_triple_press
+                          - conditions: '{{ "triple_press" in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}'
+                            sequence:
+                              # store the quadruple press event in the last controller event helper
+                              - service: input_text.set_value
+                                data:
+                                  entity_id: !input helper_last_controller_event
+                                  value: '{{ {"trigger_action":"quadruple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
+                              # run the quadruple press action
+                              # fire the event
+                              - event: ahb_controller_event
+                                event_data:
+                                  controller: "{{ controller_id }}"
+                                  action: button_quadruple_press
+                              # run the custom action
+                              - choose:
+                                  - conditions: []
+                                    sequence: !input action_button_quadruple_press
+                          - conditions: '{{ "quadruple_press" in states(helper_last_controller_event) and trigger_delta | int <= helper_multi_press_delay | int }}'
+                            sequence:
+                              # store the quintuple press event in the last controller event helper
+                              - service: input_text.set_value
+                                data:
+                                  entity_id: !input helper_last_controller_event
+                                  value: '{{ {"trigger_action":"quintuple_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
+                              # run the quintuple press action
+                              # fire the event
+                              - event: ahb_controller_event
+                                event_data:
+                                  controller: "{{ controller_id }}"
+                                  action: button_quintuple_press
+                              # run the custom action
+                              - choose:
+                                  - conditions: []
+                                    sequence: !input action_button_quintuple_press
+                        # previous event was not a short press
+                        default:
+                          # update helper
+                          - service: input_text.set_value
+                            data:
+                              entity_id: !input helper_last_controller_event
+                              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
+                          # Optionally skip delay to always fire the first release
+                          - choose:
+                              - conditions: "{{ button_multi_press_always_fire_first_release }}"
+                                sequence: []
+                            default:
+                              # wait for the multi press event to occur, within the provided delay
+                              # if the second press is received, automation is restarted
+                              - delay:
+                                  milliseconds: "{{ adjusted_multi_press_delay }}"
+                              # if delay expires, no second press was received, therefore run the short press action
+                              # run the short press action
+                          # fire the event
+                          - event: ahb_controller_event
+                            event_data:
+                              controller: "{{ controller_id }}"
+                              action: button_short_release
+                          # run the toggle dim entity action
+                          - choose:
+                              - conditions:
+                                  - "{{ button_toggle_dim_entity_first_press }}"
+                                  - "{{ (hold_to_dim_entity | string | length) > 0 }}"
+                                sequence:
+                                  - choose:
+                                      - conditions: >-
+                                          {{ expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | list | count > 0 }}
+                                        sequence:
+                                          - service: light.turn_off
+                                            target:
+                                              entity_id: "{{ hold_to_dim_entity }}"
+                                    default:
+                                      - service: light.turn_on
                                         target:
                                           entity_id: "{{ hold_to_dim_entity }}"
-                                default:
-                                  - service: light.turn_on
+                          # run the custom action
+                          - choose:
+                              - conditions: []
+                                sequence: !input action_button_short_release
+                # if multi press event is disabled run the action for the single short press
+                default:
+                  # update helper
+                  - service: input_text.set_value
+                    data:
+                      entity_id: !input helper_last_controller_event
+                      value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
+                  # fire the event
+                  - event: ahb_controller_event
+                    event_data:
+                      controller: "{{ controller_id }}"
+                      action: button_short_release
+                  # run the toggle dim entity action
+                  - choose:
+                      - conditions:
+                          - "{{ button_toggle_dim_entity_first_press }}"
+                          - "{{ (hold_to_dim_entity | string | length) > 0 }}"
+                        sequence:
+                          - choose:
+                              - conditions: >-
+                                  {{ expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | list | count > 0 }}
+                                sequence:
+                                  - service: light.turn_off
                                     target:
                                       entity_id: "{{ hold_to_dim_entity }}"
-                      # run the custom action
-                      - choose:
-                          - conditions: []
-                            sequence: !input action_button_short_release
-            # if multi press event is disabled run the action for the single short press
-            default:
+                            default:
+                              - service: light.turn_on
+                                target:
+                                  entity_id: "{{ hold_to_dim_entity }}"
+                  # run the custom action
+                  - choose:
+                      - conditions: []
+                        sequence: !input action_button_short_release
+          - conditions: "{{ trigger_action | string in button_long_repeat }}"
+            sequence:
               # update helper
               - service: input_text.set_value
                 data:
                   entity_id: !input helper_last_controller_event
                   value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
-              # fire the event
+              # fire the event only once before looping the action
               - event: ahb_controller_event
                 event_data:
                   controller: "{{ controller_id }}"
-                  action: button_short_release
-              # run the toggle dim entity action
+                  action: button_long_repeat
               - choose:
                   - conditions:
-                      - "{{ button_toggle_dim_entity_first_press }}"
+                      - "{{ button_hold_to_dim }}"
                       - "{{ (hold_to_dim_entity | string | length) > 0 }}"
                     sequence:
+                      - variables:
+                          current_brightness: >-
+                            {% set brightness_list=expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | map(attribute='attributes.brightness') | list %}
+                            {{ [(((brightness_list | sum) / (brightness_list | length)) if (brightness_list | length) > 0 else 0 | int), 255] | min }}
                       - choose:
                           - conditions: >-
-                              {{ expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | list | count > 0 }}
+                              {{ (last_dim_direction == "down" and current_brightness > 0) or current_brightness >= 250 }}
                             sequence:
-                              - service: light.turn_off
+                              - service: light.turn_on
+                                data:
+                                  brightness_step: "{{ -hold_to_dim_brightness_step }}"
                                 target:
                                   entity_id: "{{ hold_to_dim_entity }}"
+                              - service: input_text.set_value
+                                data:
+                                  entity_id: !input helper_last_controller_event
+                                  value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"down"} | to_json }}'
+                          - conditions: >-
+                              {{ current_brightness == 0 }}
+                            sequence:
+                              - service: light.turn_on
+                                data:
+                                  brightness: "{{ hold_to_dim_brightness_step }}"
+                                target:
+                                  entity_id: "{{ hold_to_dim_entity }}"
+                              - service: input_text.set_value
+                                data:
+                                  entity_id: !input helper_last_controller_event
+                                  value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
+                          - conditions: >-
+                              {{ (last_dim_direction == "up" and current_brightness < 255) or current_brightness < 5 }}
+                            sequence:
+                              - service: light.turn_on
+                                data:
+                                  brightness_step: "{{ hold_to_dim_brightness_step }}"
+                                target:
+                                  entity_id: "{{ hold_to_dim_entity }}"
+                              - service: input_text.set_value
+                                data:
+                                  entity_id: !input helper_last_controller_event
+                                  value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
                         default:
-                          - service: light.turn_on
-                            target:
-                              entity_id: "{{ hold_to_dim_entity }}"
-              # run the custom action
-              - choose:
-                  - conditions: []
-                    sequence: !input action_button_short_release
-      - conditions: "{{ trigger_action | string in button_long_repeat }}"
-        sequence:
-          # update helper
-          - service: input_text.set_value
-            data:
-              entity_id: !input helper_last_controller_event
-              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
-          # fire the event only once before looping the action
-          - event: ahb_controller_event
-            event_data:
-              controller: "{{ controller_id }}"
-              action: button_long_repeat
-          - choose:
-              - conditions:
-                  - "{{ button_hold_to_dim }}"
-                  - "{{ (hold_to_dim_entity | string | length) > 0 }}"
-                sequence:
-                  - variables:
-                      current_brightness: >-
-                        {% set brightness_list=expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | map(attribute='attributes.brightness') | list %}
-                        {{ [(((brightness_list | sum) / (brightness_list | length)) if (brightness_list | length) > 0 else 0 | int), 255] | min }}
-                  - choose:
-                      - conditions: >-
-                          {{ (last_dim_direction == "down" and current_brightness > 0) or current_brightness >= 250 }}
-                        sequence:
-                          - service: light.turn_on
-                            data:
-                              brightness_step: "{{ -hold_to_dim_brightness_step }}"
-                            target:
-                              entity_id: "{{ hold_to_dim_entity }}"
-                          - service: input_text.set_value
-                            data:
-                              entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"down"} | to_json }}'
-                      - conditions: >-
-                          {{ current_brightness == 0 }}
-                        sequence:
-                          - service: light.turn_on
-                            data:
-                              brightness: "{{ hold_to_dim_brightness_step }}"
-                            target:
-                              entity_id: "{{ hold_to_dim_entity }}"
-                          - service: input_text.set_value
-                            data:
-                              entity_id: !input helper_last_controller_event
-                              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
-                      - conditions: >-
-                          {{ (last_dim_direction == "up" and current_brightness < 255) or current_brightness < 5 }}
-                        sequence:
                           - service: light.turn_on
                             data:
                               brightness_step: "{{ hold_to_dim_brightness_step }}"
@@ -501,38 +533,28 @@ action:
                             data:
                               entity_id: !input helper_last_controller_event
                               value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
-                    default:
-                      - service: light.turn_on
-                        data:
-                          brightness_step: "{{ hold_to_dim_brightness_step }}"
-                        target:
-                          entity_id: "{{ hold_to_dim_entity }}"
-                      - service: input_text.set_value
-                        data:
-                          entity_id: !input helper_last_controller_event
-                          value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":"up"} | to_json }}'
-          - choose:
-              # if looping is enabled, loop the action for a finite number of iterations
-              - conditions: "{{ button_long_repeat_loop }}"
-                sequence:
-                  - repeat:
-                      while: "{{ repeat.index < button_long_repeat_max_loop_repeats | int }}"
-                      sequence: !input action_button_long_repeat
-            # if looping is not enabled run the custom action only once
-            default: !input action_button_long_repeat
-      - conditions: "{{ trigger_action | string in button_long_release }}"
-        sequence:
-          # update helper
-          - service: input_text.set_value
-            data:
-              entity_id: !input helper_last_controller_event
-              value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
-          # fire the event
-          - event: ahb_controller_event
-            event_data:
-              controller: "{{ controller_id }}"
-              action: button_long_release
-          # run the custom action
-          - choose:
-              - conditions: []
-                sequence: !input action_button_long_release
+              - choose:
+                  # if looping is enabled, loop the action for a finite number of iterations
+                  - conditions: "{{ button_long_repeat_loop }}"
+                    sequence:
+                      - repeat:
+                          while: "{{ repeat.index < button_long_repeat_max_loop_repeats | int }}"
+                          sequence: !input action_button_long_repeat
+                # if looping is not enabled run the custom action only once
+                default: !input action_button_long_repeat
+          - conditions: "{{ trigger_action | string in button_long_release }}"
+            sequence:
+              # update helper
+              - service: input_text.set_value
+                data:
+                  entity_id: !input helper_last_controller_event
+                  value: '{{ {"trigger_action":trigger_action,"last_triggered":now()|string,"last_dim_direction":last_dim_direction} | to_json }}'
+              # fire the event
+              - event: ahb_controller_event
+                event_data:
+                  controller: "{{ controller_id }}"
+                  action: button_long_release
+              # run the custom action
+              - choose:
+                  - conditions: []
+                    sequence: !input action_button_long_release
