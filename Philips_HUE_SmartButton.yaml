@@ -6,8 +6,8 @@ blueprint:
   domain: automation
   input:
     controller_device:
-      name: HUE Smart Button Device
-      description: The button device to use for the automation.
+      name: HUE Smart Button Device (HUE & ZHA)
+      description: The button device to use for the automation (do not fill if using Zigbee2MQTT).
       default: ""
       selector:
         device:
@@ -15,7 +15,7 @@ blueprint:
             domain: sensor
             device_class: battery
     controller_topic:
-      name: HUE Smart Button Device (Zigbee2MQTT)
+      name: HUE Smart Button Topic (Zigbee2MQTT)
       description: The MQTT topic to use for the automation (only fill if using Zigbee2MQTT)
       default: ""
       selector:
@@ -30,7 +30,9 @@ blueprint:
     # inputs for custom actions
     action_button_short_release:
       name: (Optional) Short button press release.
-      description: Action to run on short button press release.
+      description: >-
+        Action to run on short button press release.
+        There is no need to use this action if using the light toggle options below.
       default: []
       selector:
         action:
@@ -60,7 +62,9 @@ blueprint:
         action:
     action_button_long_repeat:
       name: (Optional) Button long hold
-      description: Action to run on long button hold - this is fired every second the button is held down.
+      description: >-
+        Action to run on long button hold - this is fired every second the button is held down.
+        (There is no need to use this action if using hold to dim options below.)
       default: []
       selector:
         action:
@@ -79,7 +83,9 @@ blueprint:
     # inputs for looping custom actions on long button press events until the corresponding release event is received
     button_long_repeat_loop:
       name: (Optional) Button long press - loop actions
-      description: Loop the button action until the button is released (it will be called every second without this).
+      description: >-
+        Loop the button action until the button is released (it will be called every second without this).
+        (There is no need to use this action if using hold to dim options below.)
       default: false
       selector:
         boolean:
@@ -88,6 +94,7 @@ blueprint:
       description: >-
         Maximum number of repeats for the custom action, when looping is enabled.
         Use it as a safety limit to prevent an endless loop in case the corresponding stop event is not received.
+        (There is no need to use this action if using hold to dim options below.)
       default: 500
       selector:
         number:
@@ -98,14 +105,14 @@ blueprint:
     # inputs for enabling double press events
     button_multi_press_enabled:
       name: (Optional) Enable button multi press events
-      description: Choose whether or not to enable the virtual multi press events for the button. Turn this on if you are providing actions for the button double/triple/quadruple/quintuple press events.
+      description: Choose whether or not to enable the virtual multi press events for the button. Leave this on if you are providing actions for the button double/triple/quadruple/quintuple press events.
       default: true
       selector:
         boolean:
     # inputs for enabling double press events
     button_multi_press_always_fire_first_release:
       name: (Optional) Always fire first short button release
-      description: Choose whether or not to always fire the first short button release action.
+      description: Choose whether or not to always fire the first short button release action without waiting for the Multi Press delay.
       default: false
       selector:
         boolean:
@@ -122,27 +129,37 @@ blueprint:
           mode: box
           step: 10
     hold_to_dim_entity:
-      name: (Optional) Dim Light Entity
-      description: Light entity to be dimmed when holding
+      name: (Optional) Toggle/Dim Light Entity
+      description: Light entity to be dimmed when holding or toggled on first press as configured below.
       default: ""
       selector:
         entity:
           domain: light
     button_hold_to_dim:
       name: (Optional) Enable Hold to Dim
-      description: Enable the hold to dim action - requires the Dim Light Entity to be set.
+      description: Enable the hold to dim action - requires the Toggle/Dim Light Entity to be set.
       default: false
       selector:
         boolean:
     button_toggle_dim_entity_first_press:
-      name: (Optional) Enable Toggle Dim Light Entity First Press
-      description: Enable or disable the default behaviour of toggling the dimmed light entity on the first press
+      name: (Optional) Enable Toggle Light on First Press
+      description: Enable or disable the behaviour of toggling the Toggle/Dim Light Entity on first press.
       default: false
       selector:
         boolean:
+    toggle_dim_entity_brightness:
+      name: (Optional) First Press Toggle Brightness %
+      description: The Brightness % to set the Toggle/Dim Light Entity to when turning on with a first press toggle. (0 uses the previous brightness)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+          step: 1
     hold_to_dim_brightness_step:
       name: (Optional) Dimming Brightness Step
-      description: The value to increment/decrement brightness by
+      description: The value to increment/decrement brightness by whilst holding.
       default: 20
       selector:
         number:
@@ -180,6 +197,7 @@ variables:
   helper_multi_press_delay: !input helper_multi_press_delay
   button_hold_to_dim: !input button_hold_to_dim
   button_toggle_dim_entity_first_press: !input button_toggle_dim_entity_first_press
+  toggle_dim_entity_brightness: !input toggle_dim_entity_brightness
   hold_to_dim_entity: !input hold_to_dim_entity
   hold_to_dim_brightness_step: !input hold_to_dim_brightness_step
   hold_to_dim_direction_down: !input hold_to_dim_direction_down
@@ -294,7 +312,11 @@ action:
           default_dim_direction: >-
             {{ "down" if hold_to_dim_direction_down else "up" }}
           last_dim_direction: >-
-            {{ ((states(helper_last_controller_event) | from_json).last_dim_direction if helper_valid and "last_dim_direction" in (states(helper_last_controller_event) | from_json) else default_dim_direction) }}
+            {% if helper_valid and "last_dim_direction" in (states(helper_last_controller_event) | from_json) and trigger_delta | int <= ((helper_multi_press_delay | int) * 2) %}
+            {{ (states(helper_last_controller_event) | from_json).last_dim_direction }}
+            {% else %}
+            {{ default_dim_direction }}
+            {% endif %}
           last_trigger_action: >-
             {{ ((states(helper_last_controller_event) | from_json).trigger_action if helper_valid and "trigger_action" in (states(helper_last_controller_event) | from_json) else "None") }}
       # choose the sequence to run based on the received button event
@@ -428,6 +450,12 @@ action:
                                       - service: light.turn_on
                                         target:
                                           entity_id: "{{ hold_to_dim_entity }}"
+                                        data_template: >-
+                                          {% if (toggle_dim_entity_brightness | int) > 0 %}
+                                          {{ {"brightness_pct": (toggle_dim_entity_brightness | int)} }}
+                                          {% else %}
+                                          {{ {} }}
+                                          {% endif %}
                           # run the custom action
                           - choose:
                               - conditions: []
@@ -461,6 +489,12 @@ action:
                               - service: light.turn_on
                                 target:
                                   entity_id: "{{ hold_to_dim_entity }}"
+                                data_template: >-
+                                  {% if (toggle_dim_entity_brightness | int) > 0 %}
+                                  {{ {"brightness_pct": (toggle_dim_entity_brightness | int)} }}
+                                  {% else %}
+                                  {{ {} }}
+                                  {% endif %}
                   # run the custom action
                   - choose:
                       - conditions: []
