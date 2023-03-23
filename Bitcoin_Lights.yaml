@@ -1,0 +1,123 @@
+blueprint:
+  name: Bitcoin Light Colours on Price Movement
+  description: Bitcoin Light Colours on Price Movement
+  domain: automation
+  input:
+    PRICE_ENTITY:
+      name: Price Entity
+      description: "Entity to retrieve price from"
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          integration: cryptoinfo
+    LIGHT_ENTITIES:
+      name: Light Entities
+      description: "Light Entities to control"
+      default: []
+      selector:
+        object:
+    TOGGLE_ENABLED:
+      name: Toggler to enable/disable
+      description: Toggler
+      selector:
+        entity:
+          domain: input_boolean
+          integration: input_boolean
+    TEMP_SCENE:
+      name: Temporary Scene
+      description: Temporary Scene name to use for states
+      default: "temp_btc_changer"
+      selector:
+        text:
+    RESET_SCENE:
+      name: Reset scene after change
+      description: Reset scene after change
+      default: true
+      selector:
+        boolean:
+variables:
+  PRICE_ENTITY: !input PRICE_ENTITY
+  LIGHT_ENTITIES: !input LIGHT_ENTITIES
+  TOGGLE_ENABLED: !input TOGGLE_ENABLED
+  TEMP_SCENE: !input TEMP_SCENE
+  RESET_SCENE: !input RESET_SCENE
+  TEMP_SCENE_ID: >-
+    {{ "scene." + TEMP_SCENE }}
+  SCENE_LIGHTS: >-
+    {{ (expand(LIGHT_ENTITIES)) | map(attribute="entity_id") | unique | list }}
+  ON_LIGHTS: "{{ LIGHT_ENTITIES | unique | list }}"
+trigger:
+  - platform: state
+    entity_id: !input PRICE_ENTITY
+condition:
+  - condition: template
+    value_template: >-
+      {{ expand(TOGGLE_ENABLED) |
+      selectattr('state', 'eq', 'on') | list | count > 0}}
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (trigger.from_state.state | float) != (trigger.to_state.state | float) }}
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ RESET_SCENE }}
+                sequence:
+                  - service: scene.create
+                    data:
+                      scene_id: "{{ TEMP_SCENE }}"
+                      snapshot_entities: "{{ SCENE_LIGHTS }}"
+                  - delay:
+                      hours: 0
+                      minutes: 0
+                      seconds: 1
+                      milliseconds: 0
+          - repeat:
+              count: 2
+              sequence:
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ (trigger.to_state.state | float) > (trigger.from_state.state | float) }}
+                      sequence:
+                        - service: light.turn_on
+                          data:
+                            rgb_color:
+                              - 0
+                              - 255
+                              - 17
+                            brightness_pct: 100
+                          target:
+                            entity_id: "{{ ON_LIGHTS }}"
+                  default:
+                    - service: light.turn_on
+                      data:
+                        rgb_color:
+                          - 255
+                          - 0
+                          - 0
+                        brightness_pct: 100
+                      target:
+                        entity_id: "{{ ON_LIGHTS }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: >-
+                      {{ RESET_SCENE }}
+                sequence:
+                  - delay:
+                      hours: 0
+                      minutes: 0
+                      seconds: 5
+                      milliseconds: 0
+                  - service: scene.turn_on
+                    target:
+                      entity_id: "{{ TEMP_SCENE_ID }}"
+                    metadata: {}
+mode: single
