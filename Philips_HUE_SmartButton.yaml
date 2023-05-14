@@ -348,7 +348,7 @@ action:
                               - service: input_text.set_value
                                 data:
                                   entity_id: !input helper_last_controller_event
-                                  value: '{{ {"trigger_action":"double_press","last_triggered":now() | string} | to_json }}'
+                                  value: '{{ {"trigger_action":"double_press","last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
                               # run the double press action
                               # fire the event
                               - event: ahb_controller_event
