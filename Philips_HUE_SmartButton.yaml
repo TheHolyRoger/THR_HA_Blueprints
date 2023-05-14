@@ -307,7 +307,7 @@ action:
             {% else %}
             {{ trigger.event.data.command }}
             {% endif %}
-          helper_valid: '{{ helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\": \".*\"(, )?)*\}$")) }}'
+          helper_valid: '{{ helper_last_controller_event is not none and (states(helper_last_controller_event) | regex_match("^\{(\".*\":[ ]?\".*\"(,[ ]?)?)*\}$")) }}'
           trigger_delta: '{{ (as_timestamp(now()) - as_timestamp((states(helper_last_controller_event) | from_json).last_triggered if helper_valid else "1970-01-01 00:00:00")) * 1000 }}'
           default_dim_direction: >-
             {{ "down" if hold_to_dim_direction_down else "up" }}
