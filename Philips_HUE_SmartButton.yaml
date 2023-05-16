@@ -113,7 +113,7 @@ blueprint:
     button_multi_press_always_fire_first_release:
       name: (Optional) Always fire first short button release
       description: Choose whether or not to always fire the first short button release action without waiting for the Multi Press delay.
-      default: false
+      default: true
       selector:
         boolean:
     # helpers used to properly recognize the remote button events
@@ -124,7 +124,7 @@ blueprint:
       selector:
         number:
           min: 1000
-          max: 5000
+          max: 43200000
           unit_of_measurement: milliseconds
           mode: box
           step: 10
