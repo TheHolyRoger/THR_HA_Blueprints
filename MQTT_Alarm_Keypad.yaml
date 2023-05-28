@@ -1,0 +1,185 @@
+# Blueprint metadata
+blueprint:
+  name: MQTT Alarm Keypad
+  description: |
+    # Controller automation for MQTT Alarm Keypad
+  domain: automation
+  input:
+    alarm_entity:
+      name: Alarm Control Panel Entity
+      description: Alarm Control Panel Entity to be controlled by the keypad
+      default: ""
+      selector:
+        entity:
+          domain: alarm_control_panel
+    mqtt_topic_prefix:
+      name: MQTT Device Topic Prefix
+      description: The MQTT topic prefix used by the device. Should be it's 'name'.
+      default: ""
+      selector:
+        text:
+    entity_id_prefix:
+      name: Entity ID Prefix
+      description: The Entity ID Prefix for the MQTT Alarm Keypad entities. E.g. For 'light.bedkeypad_status_led' the prefix is 'bedkeypad'
+      default: ""
+      selector:
+        text:
+trigger_variables:
+  device_topic: !input mqtt_topic_prefix
+variables:
+  device_topic: !input mqtt_topic_prefix
+  alarm_entity: !input alarm_entity
+  entity_id_prefix: !input entity_id_prefix
+trigger:
+  - platform: state
+    entity_id: !input alarm_entity
+  - platform: mqtt
+    topic: "{{device_topic}}/command_arm_mode/alarm_arm_away"
+  - platform: mqtt
+    topic: "{{device_topic}}/command_arm_mode/alarm_disarm"
+  - platform: mqtt
+    topic: "{{device_topic}}/command_arm_mode/alarm_arm_home"
+  - platform: mqtt
+    topic: "{{device_topic}}/mqtt_status"
+    payload: connected
+condition: []
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.platform == "state" }}'
+        sequence:
+          - service: mqtt.publish
+            data:
+              qos: 0
+              topic: "{{device_topic}}/set_alarm_state"
+              payload: "{{ trigger.to_state.state.replace('_', ' ')|title }}"
+              retain: false
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: '{{ trigger.to_state.state == "disarmed" }}'
+                sequence:
+                  - service: light.turn_off
+                    data: {}
+                    target:
+                      entity_id: >-
+                        {% set lights = ['status_led', 'warning_led'] %}
+                        {{lights| map('regex_replace', '^(.*)$', "light." + entity_id_prefix + "_\\1")|list}}
+              - conditions:
+                  - condition: template
+                    value_template: '{{ trigger.to_state.state in ["pending", "arming", "triggered"] }}'
+                sequence:
+                  - service: light.turn_on
+                    data: {}
+                    target:
+                      entity_id: "light.{{entity_id_prefix}}_warning_led"
+              - conditions:
+                  - condition: template
+                    value_template: "{{ trigger.to_state.state.startswith('armed') }}"
+                sequence:
+                  - service: light.turn_off
+                    data: {}
+                    target:
+                      entity_id: "light.{{entity_id_prefix}}_warning_led"
+                  - service: light.turn_on
+                    data: {}
+                    target:
+                      entity_id: "light.{{entity_id_prefix}}_status_led"
+      - conditions:
+          - condition: template
+            value_template: '{{ trigger.platform == "mqtt" }}'
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: or
+                    conditions:
+                      - condition: template
+                        value_template: "{{ trigger.topic.endswith('alarm_arm_away') }}"
+                      - condition: template
+                        value_template: "{{ trigger.topic.endswith('alarm_arm_home') }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ trigger.topic.endswith('alarm_arm_away') }}"
+                        sequence:
+                          - service: alarm_control_panel.alarm_arm_away
+                            data:
+                              code: "{{ trigger.payload }}"
+                            target:
+                              entity_id: "{{alarm_entity}}"
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ trigger.topic.endswith('alarm_arm_home') }}"
+                        sequence:
+                          - service: alarm_control_panel.alarm_arm_home
+                            data:
+                              code: "{{ trigger.payload }}"
+                            target:
+                              entity_id: "{{alarm_entity}}"
+                  - delay:
+                      hours: 0
+                      minutes: 0
+                      seconds: 1
+                      milliseconds: 0
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: >-
+                              {% set alarm_state=states(alarm_entity) %}
+                              {{ alarm_state != 'arming' and not alarm_state.startswith('armed') }}
+                        sequence:
+                          - service: button.press
+                            data: {}
+                            target:
+                              entity_id: "button.{{entity_id_prefix}}_alarm_code_failure"
+                    default:
+                      - service: button.press
+                        data: {}
+                        target:
+                          entity_id: "button.{{entity_id_prefix}}_alarm_code_success"
+            default:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ trigger.topic.endswith('alarm_disarm') }}"
+                    sequence:
+                      - service: alarm_control_panel.alarm_disarm
+                        data:
+                          code: "{{ trigger.payload }}"
+                        target:
+                          entity_id: "{{alarm_entity}}"
+                      - delay:
+                          hours: 0
+                          minutes: 0
+                          seconds: 1
+                          milliseconds: 0
+                      - choose:
+                          - conditions:
+                              - condition: template
+                                value_template: "{{ states(alarm_entity) != 'disarmed' }}"
+                            sequence:
+                              - service: button.press
+                                data: {}
+                                target:
+                                  entity_id: "button.{{entity_id_prefix}}_alarm_code_failure"
+                        default:
+                          - service: button.press
+                            data: {}
+                            target:
+                              entity_id: "button.{{entity_id_prefix}}_alarm_code_success"
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ trigger.topic.endswith('mqtt_status') }}"
+                    sequence:
+                      - service: mqtt.publish
+                        data:
+                          qos: 0
+                          topic: "{{device_topic}}/set_alarm_state"
+                          payload: >-
+                            {{ states(alarm_entity).replace('_',
+                            ' ')|title }}
+                          retain: false
+mode: queued
+max: 4

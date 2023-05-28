@@ -1,0 +1,294 @@
+substitutions:
+  # Device Config
+  name: "mqtt-alarm-keypad-main"
+  friendly_name: "Alarm Keypad Main"
+  # Unused HASS Entity for Text Sensor
+  # alarm_panel_entity_id: alarm_control_panel.alarmo
+  # Alarm Action Keys
+  key_arm_away: B
+  key_arm_home: A
+  key_disarm: D
+  # Alarm Pin Code Length
+  min_code_length: "0"
+  max_code_length: "4"
+  # HASS Config
+  api_encryption_key: !secret api_alarm_keypad_bedroom
+  ota_password: !secret ota_alarm_keypad_bedroom
+  # Screen Pins
+  pin_screen_sda: GPIO21
+  pin_screen_scl: GPIO22
+  # LED Pins
+  pin_led_success: GPIO19
+  pin_led_failure: GPIO18
+  pin_led_warning: GPIO5
+  pin_led_status: GPIO17
+  pin_led_keypress: GPIO18
+  # Keypad Pins
+  pin_keypad_row1: GPIO26
+  pin_keypad_row2: GPIO25
+  pin_keypad_row3: GPIO33
+  pin_keypad_row4: GPIO32
+  pin_keypad_col1: GPIO13
+  pin_keypad_col2: GPIO12
+  pin_keypad_col3: GPIO14
+  pin_keypad_col4: GPIO27
+
+esphome:
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+  # includes:
+  #   - text_processing.h
+
+esp32:
+  board: esp32doit-devkit-v1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "${api_encryption_key}"
+
+ota:
+  password: "${ota_password}"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+globals:
+  - id: pin_string
+    type: std::string
+    initial_value: ""
+  - id: hidden_string
+    type: std::string
+    initial_value: ""
+  - id: alarm_state_string
+    type: std::string
+    initial_value: '"Disarmed"'
+  - id: submitting_code
+    type: int
+
+mqtt:
+  broker: !secret mqtt_broker
+  port: !secret mqtt_port
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  on_connect:
+    - delay: 6s
+    - mqtt.publish:
+        topic: "${name}/mqtt_status"
+        payload: "connected"
+  on_message:
+    - topic: "${name}/set_alarm_state"
+      qos: 0
+      then:
+        - lambda: |-
+            id(alarm_state_string) = x.c_str();
+        - component.update: alarm_display
+
+
+matrix_keypad:
+  id: alarmkeypad
+  rows:
+    - pin: ${pin_keypad_row1}
+    - pin: ${pin_keypad_row2}
+    - pin: ${pin_keypad_row3}
+    - pin: ${pin_keypad_row4}
+  columns:
+    - pin: ${pin_keypad_col1}
+    - pin: ${pin_keypad_col2}
+    - pin: ${pin_keypad_col3}
+    - pin: ${pin_keypad_col4}
+  keys: "123A456B789C*0#D"
+  has_diodes: false
+
+
+light:
+  - platform: binary
+    name: "${friendly_name} Warning LED"
+    output: warning_led
+  - platform: binary
+    name: "${friendly_name} Status LED"
+    output: status_led
+
+output:
+  - id: success_led
+    platform: gpio
+    pin: ${pin_led_success}
+  - id: failure_led
+    platform: gpio
+    pin: ${pin_led_failure}
+  - id: warning_led
+    platform: gpio
+    pin: ${pin_led_warning}
+  - id: status_led
+    platform: gpio
+    pin: ${pin_led_status}
+  - id: keypress_led
+    platform: gpio
+    pin: ${pin_led_keypress}
+
+key_collector:
+  - id: pincode_reader
+    source_id: alarmkeypad
+    min_length: ${min_code_length}
+    max_length: ${max_code_length}
+    end_keys: "#ABD"
+    end_key_required: true
+    back_keys: "*"
+    clear_keys: "C"
+    allowed_keys: "0123456789"
+    timeout: 10s
+    on_progress:
+      - logger.log:
+          format: "input progress: '%s', started by '%c'"
+          args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
+      - lambda: |-
+          id(pin_string) = x.c_str();
+          id(hidden_string) = std::string(x.length(),'*').c_str();
+      - if:
+          condition:
+            lambda: 'return x.length() == 0 && id(submitting_code) == 0;'
+          then:
+            - repeat:
+                count: 2
+                then:
+                  - output.turn_on: success_led
+                  - output.turn_on: failure_led
+                  - delay: 50ms
+                  - output.turn_off: success_led
+                  - output.turn_off: failure_led
+                  - delay: 50ms
+          else:
+            - output.turn_on: keypress_led
+            - delay: 50ms
+            - output.turn_off: keypress_led
+      - lambda: |-
+          id(submitting_code) = 0;
+      - component.update: alarm_display
+    on_result:
+      - lambda: |-
+          id(submitting_code) = 1;
+      - logger.log:
+          format: "input result: '%s', started by '%c', ended by '%c', '%d'"
+          args: [ 'x.c_str()', "(start == 0 ? '~' : start)", "(end == 0 ? '~' : end)", end ]
+      - lambda: |-
+          id(pin_string) = x.c_str();
+          id(hidden_string) = std::string(x.length(),'#');
+      - logger.log:
+          format: "pin_string result: '%s'"
+          args: [ 'id(pin_string).c_str()' ]
+      - if:
+          condition:
+            lambda: "return end == '${key_disarm}';"
+          then:
+            - logger.log:
+                format: "Alarm Disarm: '%s'"
+                args: [ 'id(pin_string).c_str()' ]
+            - mqtt.publish:
+                topic: "${name}/command_arm_mode/alarm_disarm"
+                payload: !lambda |-
+                  return id(pin_string).c_str();
+          else:
+            - if:
+                condition:
+                  lambda: "return end == '${key_arm_away}';"
+                then:
+                  - logger.log:
+                      format: "Alarm Arm: '%s'"
+                      args: [ 'id(pin_string).c_str()' ]
+                  - mqtt.publish:
+                      topic: "${name}/command_arm_mode/alarm_arm_away"
+                      payload: !lambda |-
+                        return id(pin_string).c_str();
+                else:
+                  - if:
+                      condition:
+                        lambda: "return end == '${key_arm_home}';"
+                      then:
+                        - logger.log:
+                            format: "Alarm Arm Alt: '%s'"
+                            args: [ 'id(pin_string).c_str()' ]
+                        - mqtt.publish:
+                            topic: "${name}/command_arm_mode/alarm_arm_home"
+                            payload: !lambda |-
+                              return id(pin_string).c_str();
+      - component.update: alarm_display
+    on_timeout:
+      - logger.log:
+          format: "input timeout: '%s', started by '%c'"
+          args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
+
+font:
+  - file: "gfonts://VT323"
+    id: font_main
+    size: 19
+    glyphs: "*!\"%()+=,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz"
+
+# Unused Text Sensor
+# text_sensor:
+#   - platform: homeassistant
+#     id: alarm_state
+#     name: "Alarm State"
+#     entity_id: "${alarm_panel_entity_id}"
+#     on_value:
+#       then:
+#         - logger.log:
+#             format: "alarm_state: '%s'"
+#             args: [ 'x.c_str()' ]
+#         - lambda: |-
+#             id(alarm_state_string) = Title_Case(x.c_str());
+
+i2c:
+  sda: ${pin_screen_sda}
+  scl: ${pin_screen_scl}
+
+display:
+  - platform: ssd1306_i2c
+    id: alarm_display
+    model: "SSD1306 128x32"
+    update_interval: 1000ms
+    flip_x: False
+    flip_y: False
+    lambda: |-
+      int state_x = 63 - ((id(alarm_state_string).length() * 8) / 2);
+      int hidden_x = 64 - ((id(hidden_string).length() * 8) / 2);
+      int half_box = (((${max_code_length} * 8) / 2) + 5);
+      int box_x = 64 - half_box;
+      int box_width = half_box * 2;
+      it.printf(state_x, 0, id(font_main), id(alarm_state_string).c_str());
+      it.printf(hidden_x, 16, id(font_main), "%s", id(hidden_string).c_str());
+      it.rectangle(box_x, 20, box_width, 12);
+
+button:
+  - platform: template
+    name: "${friendly_name} Alarm Code Success"
+    id: pin_code_success
+    on_press:
+      - logger.log: "Success button pressed"
+      - repeat:
+          count: 3
+          then:
+            - output.turn_on: success_led
+            - delay: 200ms
+            - output.turn_off: success_led
+            - delay: 40ms
+  - platform: template
+    name: "${friendly_name} Alarm Code Failure"
+    id: pin_code_failure
+    on_press:
+      - logger.log: "Failure button pressed"
+      - repeat:
+          count: 2
+          then:
+            - output.turn_on: failure_led
+            - delay: 200ms
+            - output.turn_off: failure_led
+            - delay: 50ms
+      - output.turn_on: failure_led
+      - delay: 600ms
+      - output.turn_off: failure_led
