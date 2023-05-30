@@ -53,7 +53,8 @@ action:
             data:
               qos: 0
               topic: "{{device_topic}}/set_alarm_state"
-              payload: "{{ trigger.to_state.state.replace('_', ' ')|title }}"
+              payload_template: >-
+                {{ {"state": trigger.to_state.state.replace('_', ' ')|title, "delay": trigger.to_state.attributes.delay}|to_json }}
               retain: false
           - choose:
               - conditions:
@@ -177,9 +178,8 @@ action:
                         data:
                           qos: 0
                           topic: "{{device_topic}}/set_alarm_state"
-                          payload: >-
-                            {{ states(alarm_entity).replace('_',
-                            ' ')|title }}
+                          payload_template: >-
+                            {{ {"state": states(alarm_entity).replace('_', ' ')|title}|to_json }}
                           retain: false
 mode: queued
 max: 4

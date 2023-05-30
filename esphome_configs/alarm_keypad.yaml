@@ -13,6 +13,9 @@ substitutions:
   max_code_length: "4"
   # Auto submit disarm code
   auto_submit_disarm_code: "0"
+  # LED Brightness
+  status_light_brightness: "40%"
+  warning_light_brightness: "60%"
   # HASS Config
   api_encryption_key: !secret api_alarm_keypad_bedroom
   ota_password: !secret ota_alarm_keypad_bedroom
@@ -77,6 +80,10 @@ globals:
   - id: alarm_is_armed
     type: bool
     initial_value: 'false'
+  - id: alarm_delay
+    type: int
+  - id: alarm_countdown
+    type: int
 
 mqtt:
   broker: !secret mqtt_broker
@@ -88,12 +95,26 @@ mqtt:
     - mqtt.publish:
         topic: "${name}/mqtt_status"
         payload: "connected"
-  on_message:
+  on_json_message:
     - topic: "${name}/set_alarm_state"
       qos: 0
       then:
         - lambda: |-
-            id(alarm_state_string) = x.c_str();
+            if (x.containsKey("state")) {
+              std::string state = x["state"];
+              if (state == "Arming") {
+                id(alarm_countdown) = millis();
+              } else {
+                id(alarm_countdown) = 0;
+              }
+              id(alarm_state_string) = state.c_str();
+            };
+            if (x.containsKey("delay")) {
+              int delay = x["delay"];
+              if (delay > 0) {
+                id(alarm_delay) = delay;
+              }
+            };
         - component.update: alarm_display
 
 
@@ -114,13 +135,22 @@ matrix_keypad:
 
 
 light:
-  - platform: binary
+  - platform: monochromatic
+    id: warning_light
     name: "${friendly_name} Warning LED"
     output: warning_led
-  - platform: binary
+    on_turn_on:
+      - light.turn_on:
+          id: warning_light
+          brightness: ${warning_light_brightness}
+  - platform: monochromatic
+    id: status_light
     name: "${friendly_name} Status LED"
     output: status_led
     on_turn_on:
+      - light.turn_on:
+          id: status_light
+          brightness: ${status_light_brightness}
       - lambda: |-
           id(alarm_is_armed) = true;
     on_turn_off:
@@ -135,10 +165,10 @@ output:
     platform: gpio
     pin: ${pin_led_failure}
   - id: warning_led
-    platform: gpio
+    platform: ledc
     pin: ${pin_led_warning}
   - id: status_led
-    platform: gpio
+    platform: ledc
     pin: ${pin_led_status}
   - id: keypress_led
     platform: gpio
@@ -164,34 +194,36 @@ key_collector:
           id(hidden_string) = std::string(x.length(),'*').c_str();
       - if:
           condition:
-            lambda: 'return x.length() == 0 && id(submitting_code);'
+            lambda: 'return !id(submitting_code);'
           then:
-            - repeat:
-                count: 2
+            - if:
+                condition:
+                  lambda: 'return x.length() == 0;'
                 then:
-                  - output.turn_on: success_led
-                  - output.turn_on: failure_led
+                  - repeat:
+                      count: 2
+                      then:
+                        - output.turn_on: success_led
+                        - output.turn_on: failure_led
+                        - delay: 50ms
+                        - output.turn_off: success_led
+                        - output.turn_off: failure_led
+                        - delay: 50ms
+                else:
+                  - output.turn_on: keypress_led
                   - delay: 50ms
-                  - output.turn_off: success_led
-                  - output.turn_off: failure_led
-                  - delay: 50ms
-          else:
-            - output.turn_on: keypress_led
-            - delay: 50ms
-            - output.turn_off: keypress_led
+                  - output.turn_off: keypress_led
       - lambda: |-
           id(submitting_code) = false;
       - if:
           condition:
-            lambda: 'return x.length() == ${max_code_length} && ${auto_submit_disarm_code} == 1;'
+            lambda: 'return id(alarm_is_armed) && x.length() == ${max_code_length} && ${auto_submit_disarm_code} == 1;'
           then:
             - logger.log:
                 format: "Alarm Disarm: '%s'"
                 args: [ 'id(pin_string).c_str()' ]
-            - mqtt.publish:
-                topic: "${name}/command_arm_mode/alarm_disarm"
-                payload: !lambda |-
-                  return id(pin_string).c_str();
+            - lambda: |-
+                id(pincode_reader).send_key('D');
       - component.update: alarm_display
     on_result:
       - lambda: |-
@@ -201,10 +233,10 @@ key_collector:
           args: [ 'x.c_str()', "(start == 0 ? '~' : start)", "(end == 0 ? '~' : end)", end ]
       - lambda: |-
           id(pin_string) = x.c_str();
-          id(hidden_string) = std::string(x.length(),'#');
-      - logger.log:
-          format: "pin_string result: '%s'"
-          args: [ 'id(pin_string).c_str()' ]
+          id(hidden_string) = std::string(x.length(),'*');
+      # - logger.log:
+      #     format: "pin_string result: '%s'"
+      #     args: [ 'id(pin_string).c_str()' ]
       - if:
           condition:
             lambda: "return end == '${key_disarm}';"
@@ -251,6 +283,10 @@ font:
     id: font_main
     size: 19
     glyphs: "*!\"%()+=,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz"
+  - file: "gfonts://VT323"
+    id: font_small
+    size: 15
+    glyphs: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz"
 
 # Unused Text Sensor
 # text_sensor:
@@ -278,12 +314,20 @@ display:
     flip_x: False
     flip_y: False
     lambda: |-
-      int state_x = 63 - ((id(alarm_state_string).length() * 8) / 2);
       int hidden_x = 64 - ((id(hidden_string).length() * 8) / 2);
       int half_box = (((${max_code_length} * 8) / 2) + 5);
       int box_x = 64 - half_box;
       int box_width = half_box * 2;
-      it.printf(state_x, 0, id(font_main), id(alarm_state_string).c_str());
+      if (id(alarm_countdown) > 0 && id(alarm_delay) > 0) {
+        int state_x = 63 - ((id(alarm_state_string).length() * 6) / 2);
+        it.printf(state_x, 0, id(font_small), id(alarm_state_string).c_str());
+        int current_millis = millis();
+        int count_width = int(((float)((id(alarm_delay) * 1000) - (current_millis - id(alarm_countdown))) / (float)(id(alarm_delay) * 1000)) * (float)128);
+        it.filled_rectangle(0, 16, count_width, 2);
+      } else {
+        int state_x = 63 - ((id(alarm_state_string).length() * 8) / 2);
+        it.printf(state_x, 0, id(font_main), id(alarm_state_string).c_str());
+      }
       it.printf(hidden_x, 16, id(font_main), "%s", id(hidden_string).c_str());
       it.rectangle(box_x, 20, box_width, 12);
 
