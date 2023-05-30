@@ -5,17 +5,19 @@ substitutions:
   # Unused HASS Entity for Text Sensor
   # alarm_panel_entity_id: alarm_control_panel.alarmo
   # Alarm Action Keys
-  key_arm_away: B
-  key_arm_home: A
+  key_arm_away: A
+  key_arm_home: B
   key_disarm: D
   # Alarm Pin Code Length
   min_code_length: "0"
   max_code_length: "4"
   # Auto submit disarm code
-  auto_submit_disarm_code: "0"
+  auto_submit_disarm_code: "1"
   # LED Brightness
   status_light_brightness: "40%"
   warning_light_brightness: "60%"
+  # Screen Timeout in Seconds
+  screen_timeout_seconds: "300"
   # HASS Config
   api_encryption_key: !secret api_alarm_keypad_main
   ota_password: !secret ota_alarm_keypad_main
@@ -84,6 +86,8 @@ globals:
     type: int
   - id: alarm_countdown
     type: int
+  - id: last_action
+    type: int
 
 mqtt:
   broker: !secret mqtt_broker
@@ -91,6 +95,8 @@ mqtt:
   username: !secret mqtt_username
   password: !secret mqtt_password
   on_connect:
+    - lambda: |-
+        id(last_action) = millis();
     - delay: 6s
     - mqtt.publish:
         topic: "${name}/mqtt_status"
@@ -100,6 +106,7 @@ mqtt:
       qos: 0
       then:
         - lambda: |-
+            id(last_action) = millis();
             if (x.containsKey("state")) {
               std::string state = x["state"];
               if (state == "Arming" || state == "Pending") {
@@ -140,9 +147,14 @@ light:
     name: "${friendly_name} Warning LED"
     output: warning_led
     on_turn_on:
+      - lambda: |-
+          id(last_action) = millis();
       - light.turn_on:
           id: warning_light
           brightness: ${warning_light_brightness}
+    on_turn_off:
+      - lambda: |-
+          id(last_action) = millis();
   - platform: monochromatic
     id: status_light
     name: "${friendly_name} Status LED"
@@ -152,9 +164,11 @@ light:
           id: status_light
           brightness: ${status_light_brightness}
       - lambda: |-
+          id(last_action) = millis();
           id(alarm_is_armed) = true;
     on_turn_off:
       - lambda: |-
+          id(last_action) = millis();
           id(alarm_is_armed) = false;
 
 output:
@@ -190,6 +204,7 @@ key_collector:
           format: "input progress: '%s', started by '%c'"
           args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
       - lambda: |-
+          id(last_action) = millis();
           id(pin_string) = x.c_str();
           id(hidden_string) = std::string(x.length(),'*').c_str();
       - if:
@@ -227,6 +242,7 @@ key_collector:
       - component.update: alarm_display
     on_result:
       - lambda: |-
+          id(last_action) = millis();
           id(submitting_code) = true;
       - logger.log:
           format: "input result: '%s', started by '%c', ended by '%c', '%d'"
@@ -279,7 +295,9 @@ key_collector:
           args: [ 'x.c_str()', "(start == 0 ? '~' : start)" ]
 
 font:
-  - file: "gfonts://VT323"
+  - file:
+      type: gfonts
+      family: VT323
     id: font_main
     size: 19
     glyphs: "*!\"%()+=,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz"
@@ -310,6 +328,11 @@ display:
     flip_x: False
     flip_y: False
     lambda: |-
+      int current_millis = millis();
+      if (id(last_action) + ${screen_timeout_seconds}000 < current_millis) {
+        it.fill(COLOR_OFF);
+        return;
+      }
       int hidden_x = 64 - ((id(hidden_string).length() * 8) / 2);
       int half_box = (((${max_code_length} * 8) / 2) + 5);
       int box_x = 64 - half_box;
@@ -317,7 +340,6 @@ display:
       if (id(alarm_countdown) > 0 && id(alarm_delay) > 0) {
         int state_x = 63 - ((id(alarm_state_string).length() * 8) / 2);
         it.printf(state_x, -1, id(font_main), id(alarm_state_string).c_str());
-        int current_millis = millis();
         int count_width = int(((float)((id(alarm_delay) * 1000) - (current_millis - id(alarm_countdown))) / (float)(id(alarm_delay) * 1000)) * (float)124);
         it.filled_rectangle(2, 2, count_width, 14);
         it.rectangle(0, 0, 128, 18);
@@ -337,6 +359,8 @@ button:
     id: pin_code_success
     on_press:
       - logger.log: "Success button pressed"
+      - lambda: |-
+          id(last_action) = millis();
       - repeat:
           count: 3
           then:
@@ -349,6 +373,8 @@ button:
     id: pin_code_failure
     on_press:
       - logger.log: "Failure button pressed"
+      - lambda: |-
+          id(last_action) = millis();
       - repeat:
           count: 2
           then:
