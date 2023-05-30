@@ -11,6 +11,8 @@ substitutions:
   # Alarm Pin Code Length
   min_code_length: "0"
   max_code_length: "4"
+  # Auto submit disarm code
+  auto_submit_disarm_code: "0"
   # HASS Config
   api_encryption_key: !secret api_alarm_keypad_bedroom
   ota_password: !secret ota_alarm_keypad_bedroom
@@ -70,7 +72,11 @@ globals:
     type: std::string
     initial_value: '"Disarmed"'
   - id: submitting_code
-    type: int
+    type: bool
+    initial_value: 'false'
+  - id: alarm_is_armed
+    type: bool
+    initial_value: 'false'
 
 mqtt:
   broker: !secret mqtt_broker
@@ -114,6 +120,12 @@ light:
   - platform: binary
     name: "${friendly_name} Status LED"
     output: status_led
+    on_turn_on:
+      - lambda: |-
+          id(alarm_is_armed) = true;
+    on_turn_off:
+      - lambda: |-
+          id(alarm_is_armed) = false;
 
 output:
   - id: success_led
@@ -152,7 +164,7 @@ key_collector:
           id(hidden_string) = std::string(x.length(),'*').c_str();
       - if:
           condition:
-            lambda: 'return x.length() == 0 && id(submitting_code) == 0;'
+            lambda: 'return x.length() == 0 && id(submitting_code);'
           then:
             - repeat:
                 count: 2
@@ -168,11 +180,22 @@ key_collector:
             - delay: 50ms
             - output.turn_off: keypress_led
       - lambda: |-
-          id(submitting_code) = 0;
+          id(submitting_code) = false;
+      - if:
+          condition:
+            lambda: 'return x.length() == ${max_code_length} && ${auto_submit_disarm_code} == 1;'
+          then:
+            - logger.log:
+                format: "Alarm Disarm: '%s'"
+                args: [ 'id(pin_string).c_str()' ]
+            - mqtt.publish:
+                topic: "${name}/command_arm_mode/alarm_disarm"
+                payload: !lambda |-
+                  return id(pin_string).c_str();
       - component.update: alarm_display
     on_result:
       - lambda: |-
-          id(submitting_code) = 1;
+          id(submitting_code) = true;
       - logger.log:
           format: "input result: '%s', started by '%c', ended by '%c', '%d'"
           args: [ 'x.c_str()', "(start == 0 ? '~' : start)", "(end == 0 ? '~' : end)", end ]
