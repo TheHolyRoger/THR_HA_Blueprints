@@ -391,3 +391,7 @@ button:
       - output.turn_on: failure_led
       - delay: 600ms
       - output.turn_off: failure_led
+
+sensor:
+  - platform: uptime
+    name: "${friendly_name} Uptime"
