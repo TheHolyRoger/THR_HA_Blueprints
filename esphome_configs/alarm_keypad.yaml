@@ -117,7 +117,7 @@ mqtt:
               id(alarm_state_string) = state.c_str();
             };
             if (x.containsKey("delay")) {
-              int delay = x["delay"];
+              unsigned long delay = x["delay"];
               if (delay > 0) {
                 id(alarm_delay) = delay;
               }
@@ -330,8 +330,8 @@ display:
     flip_x: False
     flip_y: False
     lambda: |-
-      int current_seconds = millis()/1000ULL;
-      if (id(last_action) + ${screen_timeout_seconds} < current_seconds) {
+      unsigned long current_seconds = millis()/1000ULL;
+      if (id(last_action) + ${screen_timeout_seconds}ULL < current_seconds) {
         it.fill(COLOR_OFF);
         return;
       }
@@ -344,7 +344,7 @@ display:
         it.printf(state_x, -1, id(font_main), id(alarm_state_string).c_str());
         int count_width = (int)(
           (
-            (float)(id(alarm_delay) - (current_seconds - id(alarm_countdown))) / (float)id(alarm_delay)
+            (float)(id(alarm_delay) - (unsigned long)(current_seconds - id(alarm_countdown))) / (float)id(alarm_delay)
           ) * (float)124
         );
         it.filled_rectangle(2, 2, count_width, 14);
