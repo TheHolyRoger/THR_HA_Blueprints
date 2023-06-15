@@ -146,6 +146,7 @@ light:
     id: warning_light
     name: "${friendly_name} Warning LED"
     output: warning_led
+    restore_mode: RESTORE_DEFAULT_OFF
     on_turn_on:
       - lambda: |-
           id(last_action) = millis()/1000ULL;
@@ -159,6 +160,7 @@ light:
     id: status_light
     name: "${friendly_name} Status LED"
     output: status_led
+    restore_mode: RESTORE_DEFAULT_OFF
     on_turn_on:
       - light.turn_on:
           id: status_light
