@@ -456,10 +456,15 @@ action:
                                           {% else %}
                                           {{ {} }}
                                           {% endif %}
-                          # run the custom action
-                          - choose:
-                              - conditions: []
-                                sequence: !input action_button_short_release
+                                      # run the custom action
+                                      - choose:
+                                          - conditions: []
+                                            sequence: !input action_button_short_release
+                            default:
+                              # run the custom action
+                              - choose:
+                                  - conditions: []
+                                    sequence: !input action_button_short_release
                 # if multi press event is disabled run the action for the single short press
                 default:
                   # update helper
