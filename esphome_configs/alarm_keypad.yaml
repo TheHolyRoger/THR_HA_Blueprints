@@ -324,6 +324,7 @@ font:
 i2c:
   sda: ${pin_screen_sda}
   scl: ${pin_screen_scl}
+  frequency: 800kHz
 
 display:
   - platform: ssd1306_i2c
