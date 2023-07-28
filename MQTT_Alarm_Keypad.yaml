@@ -24,21 +24,32 @@ blueprint:
       default: ""
       selector:
         text:
+    action_arm:
+      name: (Optional) Extra actions to run on keypad arm
+      description: >-
+        Extra actions to run on keypad arm. Keypad code is available with the variable 'keypad_code'
+      default: []
+      selector:
+        action:
+    action_disarm:
+      name: (Optional) Extra actions to run on keypad disarm
+      description: >-
+        Extra actions to run on keypad disarm. Keypad code is available with the variable 'keypad_code'
+      default: []
+      selector:
+        action:
 trigger_variables:
   device_topic: !input mqtt_topic_prefix
 variables:
   device_topic: !input mqtt_topic_prefix
   alarm_entity: !input alarm_entity
   entity_id_prefix: !input entity_id_prefix
+  keypad_code: "{{ trigger.payload }}"
 trigger:
   - platform: state
     entity_id: !input alarm_entity
   - platform: mqtt
-    topic: "{{device_topic}}/command_arm_mode/alarm_arm_away"
-  - platform: mqtt
-    topic: "{{device_topic}}/command_arm_mode/alarm_disarm"
-  - platform: mqtt
-    topic: "{{device_topic}}/command_arm_mode/alarm_arm_home"
+    topic: "{{device_topic}}/command_arm_mode/#"
   - platform: mqtt
     topic: "{{device_topic}}/mqtt_status"
     payload: connected
@@ -91,34 +102,22 @@ action:
           - condition: template
             value_template: '{{ trigger.platform == "mqtt" }}'
         sequence:
+          - variables:
+              command_topic: "{{ trigger.topic.split('/')[-1] }}"
           - choose:
               - conditions:
-                  - condition: or
-                    conditions:
-                      - condition: template
-                        value_template: "{{ trigger.topic.endswith('alarm_arm_away') }}"
-                      - condition: template
-                        value_template: "{{ trigger.topic.endswith('alarm_arm_home') }}"
+                  - condition: template
+                    value_template: "{{ command_topic.startswith('alarm_arm') }}"
                 sequence:
+                  - service: "alarm_control_panel.{{command_topic}}"
+                    data:
+                      code: "{{keypad_code}}"
+                    target:
+                      entity_id: "{{alarm_entity}}"
+                  # run the custom arm action
                   - choose:
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ trigger.topic.endswith('alarm_arm_away') }}"
-                        sequence:
-                          - service: alarm_control_panel.alarm_arm_away
-                            data:
-                              code: "{{ trigger.payload }}"
-                            target:
-                              entity_id: "{{alarm_entity}}"
-                      - conditions:
-                          - condition: template
-                            value_template: "{{ trigger.topic.endswith('alarm_arm_home') }}"
-                        sequence:
-                          - service: alarm_control_panel.alarm_arm_home
-                            data:
-                              code: "{{ trigger.payload }}"
-                            target:
-                              entity_id: "{{alarm_entity}}"
+                      - conditions: []
+                        sequence: !input action_arm
                   - delay:
                       hours: 0
                       minutes: 0
@@ -144,13 +143,17 @@ action:
               - choose:
                   - conditions:
                       - condition: template
-                        value_template: "{{ trigger.topic.endswith('alarm_disarm') }}"
+                        value_template: "{{ command_topic == 'alarm_disarm' }}"
                     sequence:
                       - service: alarm_control_panel.alarm_disarm
                         data:
-                          code: "{{ trigger.payload }}"
+                          code: "{{keypad_code}}"
                         target:
                           entity_id: "{{alarm_entity}}"
+                      # run the custom disarm action
+                      - choose:
+                          - conditions: []
+                            sequence: !input action_disarm
                       - delay:
                           hours: 0
                           minutes: 0
