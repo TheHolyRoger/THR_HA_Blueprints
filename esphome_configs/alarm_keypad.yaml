@@ -5,9 +5,12 @@ substitutions:
   # Unused HASS Entity for Text Sensor
   # alarm_panel_entity_id: alarm_control_panel.alarmo
   # Alarm Action Keys
-  key_arm_away: A
-  key_arm_home: B
+  key_arm_main: A
+  key_arm_alternate: B
   key_disarm: D
+  # Alarm arm modes
+  arm_command_main: "away"
+  arm_command_alternate: "home"
   # Alarm Pin Code Length
   min_code_length: "0"
   max_code_length: "4"
@@ -269,25 +272,25 @@ key_collector:
           else:
             - if:
                 condition:
-                  lambda: "return end == '${key_arm_away}';"
+                  lambda: "return end == '${key_arm_main}';"
                 then:
                   - logger.log:
                       format: "Alarm Arm: '%s'"
                       args: [ 'id(pin_string).c_str()' ]
                   - mqtt.publish:
-                      topic: "${name}/command_arm_mode/alarm_arm_away"
+                      topic: "${name}/command_arm_mode/alarm_arm_${arm_command_main}"
                       payload: !lambda |-
                         return id(pin_string).c_str();
                 else:
                   - if:
                       condition:
-                        lambda: "return end == '${key_arm_home}';"
+                        lambda: "return end == '${key_arm_alternate}';"
                       then:
                         - logger.log:
                             format: "Alarm Arm Alt: '%s'"
                             args: [ 'id(pin_string).c_str()' ]
                         - mqtt.publish:
-                            topic: "${name}/command_arm_mode/alarm_arm_home"
+                            topic: "${name}/command_arm_mode/alarm_arm_${arm_command_alternate}"
                             payload: !lambda |-
                               return id(pin_string).c_str();
       - component.update: alarm_display
