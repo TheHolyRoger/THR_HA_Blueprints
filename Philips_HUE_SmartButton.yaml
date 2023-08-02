@@ -468,6 +468,9 @@ action:
                               - condition: template
                                 value_template: >-
                                   {{ trigger_action | string == helper_state.trigger_action and trigger_delta | int <= helper_multi_press_delay | int }}
+                              - condition: template
+                                value_template: >-
+                                  {{ scene_second_release|length > 0 or double_release_action|length > 0 }}
                             sequence:
                               # store the double press event in the last controller event helper
                               - service: input_text.set_value
@@ -512,6 +515,9 @@ action:
                               - condition: template
                                 value_template: >-
                                   {{ "double_press" == helper_state.trigger_action and trigger_delta | int <= helper_multi_press_delay | int }}
+                              - condition: template
+                                value_template: >-
+                                  {{ scene_third_release|length > 0 or triple_release_action|length > 0 }}
                             sequence:
                               # store the triple press event in the last controller event helper
                               - service: input_text.set_value
@@ -556,6 +562,9 @@ action:
                               - condition: template
                                 value_template: >-
                                   {{ "triple_press" == helper_state.trigger_action and trigger_delta | int <= helper_multi_press_delay | int }}
+                              - condition: template
+                                value_template: >-
+                                  {{ scene_fourth_release|length > 0 or quadruple_release_action|length > 0 }}
                             sequence:
                               # store the quadruple press event in the last controller event helper
                               - service: input_text.set_value
@@ -600,6 +609,9 @@ action:
                               - condition: template
                                 value_template: >-
                                   {{ "quadruple_press" == helper_state.trigger_action and trigger_delta | int <= helper_multi_press_delay | int }}
+                              - condition: template
+                                value_template: >-
+                                  {{ scene_fifth_release|length > 0 or quintuple_release_action|length > 0 }}
                             sequence:
                               # store the quintuple press event in the last controller event helper
                               - service: input_text.set_value
@@ -684,15 +696,6 @@ action:
                                             data:
                                               transition: 0
                                     default:
-                                      - service: light.turn_on
-                                        target:
-                                          entity_id: "{{ hold_to_dim_entity }}"
-                                        data: >
-                                          {% if (toggle_dim_entity_brightness | int) > 0 %}
-                                          {{ {"transition": 0, "brightness_pct": (toggle_dim_entity_brightness | int)} }}
-                                          {% else %}
-                                          {{ {"transition": 0 } }}
-                                          {% endif %}
                                       - choose: &scene-first-release-action
                                           - conditions: >-
                                               {{ scene_first_release|length > 0 }}
@@ -701,6 +704,16 @@ action:
                                                 target:
                                                   entity_id: "{{ scene_first_release }}"
                                                 metadata: {}
+                                        default:
+                                          - service: light.turn_on
+                                            target:
+                                              entity_id: "{{ hold_to_dim_entity }}"
+                                            data: >
+                                              {% if (toggle_dim_entity_brightness | int) > 0 %}
+                                              {{ {"transition": 0, "brightness_pct": (toggle_dim_entity_brightness | int)} }}
+                                              {% else %}
+                                              {{ {"transition": 0 } }}
+                                              {% endif %}
                                       # run the custom action
                                       - choose: &action-first-release-action
                                           - conditions: >-
