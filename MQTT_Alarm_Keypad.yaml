@@ -11,7 +11,8 @@ blueprint:
       default: ""
       selector:
         entity:
-          domain: alarm_control_panel
+          filter:
+            domain: alarm_control_panel
     mqtt_topic_prefix:
       name: MQTT Device Topic Prefix
       description: The MQTT topic prefix used by the device. Should be it's 'name'.
@@ -27,14 +28,42 @@ blueprint:
     action_arm:
       name: (Optional) Extra actions to run on keypad arm
       description: >-
-        Extra actions to run on keypad arm. Keypad code is available with the variable 'keypad_code'
+        Extra actions to run on keypad arm (all keys/modes). Keypad code is available with the variable 'keypad_code'
       default: []
       selector:
         action:
     action_disarm:
       name: (Optional) Extra actions to run on keypad disarm
       description: >-
-        Extra actions to run on keypad disarm. Keypad code is available with the variable 'keypad_code'
+        Extra actions to run on keypad disarm (all keys/modes). Keypad code is available with the variable 'keypad_code'
+      default: []
+      selector:
+        action:
+    action_extra_1:
+      name: (Advanced) Extra actions to run with '_extra_1'
+      description: >-
+        Extra actions to run with '_extra_1'. Keypad code is available with the variable 'keypad_code'
+      default: []
+      selector:
+        action:
+    action_extra_2:
+      name: (Advanced) Extra actions to run with '_extra_2'
+      description: >-
+        Extra actions to run with '_extra_2'. Keypad code is available with the variable 'keypad_code'
+      default: []
+      selector:
+        action:
+    action_extra_3:
+      name: (Advanced) Extra actions to run with '_extra_3'
+      description: >-
+        Extra actions to run with '_extra_3'. Keypad code is available with the variable 'keypad_code'
+      default: []
+      selector:
+        action:
+    action_extra_4:
+      name: (Advanced) Extra actions to run with '_extra_4'
+      description: >-
+        Extra actions to run with '_extra_4'. Keypad code is available with the variable 'keypad_code'
       default: []
       selector:
         action:
@@ -103,7 +132,10 @@ action:
             value_template: '{{ trigger.platform == "mqtt" }}'
         sequence:
           - variables:
-              command_topic: "{{ trigger.topic.split('/')[-1] }}"
+              command_topic: "{{ trigger.topic.split('/')[-1].split('_extra_')[0] }}"
+              extra_action: >-
+                {%- set extra_split = trigger.topic.split('/')[-1].split('_extra_') -%}
+                {{- (extra_split[1]|int(0)) if (extra_split|length) >= 2 else 0 -}}
           - choose:
               - conditions:
                   - condition: template
@@ -184,5 +216,43 @@ action:
                           payload_template: >-
                             {{ {"state": states(alarm_entity).replace('_', ' ')|title}|to_json }}
                           retain: false
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ extra_action > 0 }}"
+                sequence:
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ extra_action == 1 }}"
+                        sequence:
+                          # run the custom action 1
+                          - choose:
+                              - conditions: []
+                                sequence: !input action_extra_1
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ extra_action == 2 }}"
+                        sequence:
+                          # run the custom action 1
+                          - choose:
+                              - conditions: []
+                                sequence: !input action_extra_2
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ extra_action == 3 }}"
+                        sequence:
+                          # run the custom action 1
+                          - choose:
+                              - conditions: []
+                                sequence: !input action_extra_3
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ extra_action == 4 }}"
+                        sequence:
+                          # run the custom action 1
+                          - choose:
+                              - conditions: []
+                                sequence: !input action_extra_4
 mode: queued
 max: 4

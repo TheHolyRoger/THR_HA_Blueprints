@@ -2,13 +2,12 @@ substitutions:
   # Device Config
   name: "mqtt-alarm-keypad-main"
   friendly_name: "Alarm Keypad Main"
-  # Unused HASS Entity for Text Sensor
-  # alarm_panel_entity_id: alarm_control_panel.alarmo
   # Alarm Action Keys
-  key_arm_main: A
-  key_arm_alternate: B
-  key_disarm: D
+  key_arm_main: "A"
+  key_arm_alternate: "B"
+  key_disarm: "D"
   # Alarm arm modes
+  # For extra actions add _extra_1, _extra_2 etc to the end of your arm command (Advanced)
   arm_command_main: "away"
   arm_command_alternate: "home"
   # Alarm Pin Code Length
@@ -42,12 +41,29 @@ substitutions:
   pin_keypad_col2: GPIO12
   pin_keypad_col3: GPIO14
   pin_keypad_col4: GPIO27
+  # Advanced!
+  # Extra actions
+  # For extra disarm actions change this to e.g. "_extra_1", "_extra_2" etc
+  disarm_command_extra: ""
+  # Functional Keys - if using advanced keys, you can blank one or both of these keys with ""
+  key_delete_one_pin_entry: "*"
+  key_clear_pin_entry: "C"
+  # Advanced keys - you can change these to e.g. * or #, then assign your 'extra' commands below.
+  #   Be sure to remove the key from default assignments above.
+  #   (By default, # has no assignment and can be used below without unassigning)
+  key_advanced_1: "_"
+  key_advanced_2: "_"
+  # Advanced key actions - here you can build command strings for the above advanced keys. (the 'extra' number does not need to correspond to the 'advanced' number)
+  # e.g.
+  #   "alarm_arm_away_extra_1" would arm the alarm in 'away' mode and run the Extra Action 1 as defined in the blueprint
+  #   "noalarm_extra_2" run only the Extra Action 2 as defined in the blueprint and perform no actions on the alarm
+  #   "alarm_disarm_extra_3" would disarm the alarm and run the Extra Action 3 as defined in the blueprint
+  advanced_command_1: "alarm_arm_away_extra_1"
+  advanced_command_2: "noalarm_extra_2"
 
 esphome:
   name: "${name}"
   friendly_name: "${friendly_name}"
-  # includes:
-  #   - text_processing.h
 
 esp32:
   board: esp32doit-devkit-v1
@@ -198,10 +214,10 @@ key_collector:
     source_id: alarmkeypad
     min_length: ${min_code_length}
     max_length: ${max_code_length}
-    end_keys: "#ABD"
+    end_keys: "${key_arm_main}${key_arm_alternate}${key_disarm}${key_advanced_1}${key_advanced_2}"
     end_key_required: true
-    back_keys: "*"
-    clear_keys: "C"
+    back_keys: "${key_delete_one_pin_entry}"
+    clear_keys: "${key_clear_pin_entry}"
     allowed_keys: "0123456789"
     timeout: 10s
     on_progress:
@@ -243,7 +259,7 @@ key_collector:
                 format: "Alarm Disarm: '%s'"
                 args: [ 'id(pin_string).c_str()' ]
             - lambda: |-
-                id(pincode_reader).send_key('D');
+                id(pincode_reader).send_key('${key_disarm}');
       - component.update: alarm_display
     on_result:
       - lambda: |-
@@ -266,7 +282,7 @@ key_collector:
                 format: "Alarm Disarm: '%s'"
                 args: [ 'id(pin_string).c_str()' ]
             - mqtt.publish:
-                topic: "${name}/command_arm_mode/alarm_disarm"
+                topic: "${name}/command_arm_mode/alarm_disarm${disarm_command_extra}"
                 payload: !lambda |-
                   return id(pin_string).c_str();
           else:
@@ -293,6 +309,30 @@ key_collector:
                             topic: "${name}/command_arm_mode/alarm_arm_${arm_command_alternate}"
                             payload: !lambda |-
                               return id(pin_string).c_str();
+                      else:
+                        - if:
+                            condition:
+                              lambda: "return end == '${key_advanced_1}';"
+                            then:
+                              - logger.log:
+                                  format: "Alarm Arm Advanced 1: '%s'"
+                                  args: [ 'id(pin_string).c_str()' ]
+                              - mqtt.publish:
+                                  topic: "${name}/command_arm_mode/${advanced_command_1}"
+                                  payload: !lambda |-
+                                    return id(pin_string).c_str();
+                            else:
+                              - if:
+                                  condition:
+                                    lambda: "return end == '${key_advanced_2}';"
+                                  then:
+                                    - logger.log:
+                                        format: "Alarm Arm Advanced 2: '%s'"
+                                        args: [ 'id(pin_string).c_str()' ]
+                                    - mqtt.publish:
+                                        topic: "${name}/command_arm_mode/${advanced_command_2}"
+                                        payload: !lambda |-
+                                          return id(pin_string).c_str();
       - component.update: alarm_display
     on_timeout:
       - logger.log:
@@ -306,20 +346,6 @@ font:
     id: font_main
     size: 19
     glyphs: "*!\"%()+=,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz"
-
-# Unused Text Sensor
-# text_sensor:
-#   - platform: homeassistant
-#     id: alarm_state
-#     name: "Alarm State"
-#     entity_id: "${alarm_panel_entity_id}"
-#     on_value:
-#       then:
-#         - logger.log:
-#             format: "alarm_state: '%s'"
-#             args: [ 'x.c_str()' ]
-#         - lambda: |-
-#             id(alarm_state_string) = Title_Case(x.c_str());
 
 i2c:
   sda: ${pin_screen_sda}
@@ -356,6 +382,7 @@ display:
         it.start_clipping(0, 0, (count_width + 2), 32);
         it.printf(state_x, -1, id(font_main), COLOR_OFF, id(alarm_state_string).c_str());
         it.end_clipping();
+        id(last_action) = millis()/1000ULL;
       } else {
         int state_x = 63 - ((id(alarm_state_string).length() * 8) / 2);
         it.printf(state_x, -1, id(font_main), id(alarm_state_string).c_str());
