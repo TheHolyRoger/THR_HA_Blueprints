@@ -1,8 +1,8 @@
 # Blueprint metadata
 blueprint:
-  name: Controller - Philips Hue Smart Button
+  name: HUE Smart Button (Multi-press)
   description: |
-    # Controller - Philips Hue Smart button with multiple presses
+    # Philips HUE Smart Button - Multi-press Controller v0.1
   domain: automation
   input:
     controller_device:
