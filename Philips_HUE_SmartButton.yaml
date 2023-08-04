@@ -316,7 +316,7 @@ mode: restart
 max_exceeded: silent
 trigger:
   - event_data:
-      command: "{{ hue_press_trigger }}"
+      type: "{{ hue_press_trigger }}"
       <<: &tr-event-data
         device_id: !input controller_device
     <<: &tr-hue-event
@@ -326,15 +326,15 @@ trigger:
   - <<: *tr-hue-event
     event_data:
       <<: *tr-event-data
-      command: short_release
+      type: short_release
   - <<: *tr-hue-event
     event_data:
       <<: *tr-event-data
-      command: repeat
+      type: repeat
   - <<: *tr-hue-event
     event_data:
       <<: *tr-event-data
-      command: long_release
+      type: long_release
   - event_data:
       <<: *tr-event-data
       command: "{{ zha_press_trigger }}"
