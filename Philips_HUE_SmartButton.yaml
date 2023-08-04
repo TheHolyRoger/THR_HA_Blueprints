@@ -701,7 +701,7 @@ action:
                     sequence:
                       - variables:
                           current_brightness: >-
-                            {% set brightness_list=expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | map(attribute='attributes.brightness') | list %}
+                            {% set brightness_list=expand(hold_to_dim_entity) | selectattr("state", "eq", "on") | selectattr("attributes.brightness", "defined") | map(attribute="attributes.brightness") | list %}
                             {{ [(((brightness_list | sum) / (brightness_list | length)) if (brightness_list | length) > 0 else 0 | int), 255] | min }}
                       - choose:
                           - conditions:
@@ -709,23 +709,26 @@ action:
                                 value_template: >-
                                   {{ (last_dim_direction == "down" and current_brightness > 0) or current_brightness >= 250 }}
                             sequence:
-                              - <<: *light-on
-                                data:
-                                  brightness_step: "{{ -hold_to_dim_brightness_step }}"
                               - variables:
+                                  new_brightness_value: "{{ -hold_to_dim_brightness_step }}"
                                   last_dim_direction: "down"
-                              - *inputtext-update
+                              - &hold-to-dim-brightness-change
+                                choose:
+                                  - conditions: []
+                                    sequence: 
+                                      - <<: *light-on
+                                        data:
+                                          brightness_step: "{{ new_brightness_value }}"
+                                      - *inputtext-update
                           - conditions:
                               - condition: template
                                 value_template: >-
                                   {{ current_brightness == 0 }}
                             sequence: &hold-to-dim-brightness-up
-                              - <<: *light-on
-                                data:
-                                  brightness: "{{ hold_to_dim_brightness_step }}"
                               - variables:
+                                  new_brightness_value: "{{ hold_to_dim_brightness_step }}"
                                   last_dim_direction: "up"
-                              - *inputtext-update
+                              - *hold-to-dim-brightness-change
                           - conditions:
                               - condition: template
                                 value_template: >-
