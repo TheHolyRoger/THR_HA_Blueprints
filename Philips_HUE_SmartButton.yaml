@@ -298,8 +298,10 @@ variables:
     - "third_release"
     - "fourth_release"
     - "fifth_release"
+  toggle_dim_entity_configured: >-
+    {{ (hold_to_dim_entity | string | length) > 0 }}
   toggle_dim_entity_first_press_enabled: >-
-    {{ button_toggle_dim_entity_first_press and ((hold_to_dim_entity | string | length) > 0) }}
+    {{ button_toggle_dim_entity_first_press and toggle_dim_entity_configured }}
 trigger_variables:
   controller_topic: !input controller_topic
   controller_topic_internal: >-
@@ -436,6 +438,7 @@ action:
             {% else %}
             {{ default_dim_direction }}
             {% endif %}
+          current_dim_direction: "{{ last_dim_direction }}"
           last_press_type: >-
             {% if helper_valid and "press_type" in helper_state %}
             {{ helper_state.press_type }}
@@ -449,10 +452,6 @@ action:
           press_type: >-
             {%- if (trigger_action | string) in button_initial_press -%}
             {{- "initial_press" -}}
-            {%- elif (trigger_action | string) in button_long_repeat -%}
-            {{- "long_repeat" -}}
-            {%- elif (trigger_action | string) in button_long_release -%}
-            {{- "long_release" -}}
             {%- elif (trigger_action | string) in button_short_release and (not is_z2m or (last_press_type | string not in button_long_repeat)) -%}
               {%- if multipress_valid and (release_types[0] == last_press_type) and ((scene_second_release|length) > 0 or (second_release_action|length) > 0) -%}
               {{- release_types[1] -}}
@@ -465,8 +464,26 @@ action:
               {%- else -%}
               {{- release_types[0] -}}
               {%- endif -%}
+            {%- elif (trigger_action | string) in button_long_repeat -%}
+            {{- "long_repeat" -}}
+            {%- elif (trigger_action | string) in button_long_release -%}
+            {{- "long_release" -}}
             {%- else -%}
             {{- "" -}}
+            {%- endif -%}
+          pressed_scene_action: >-
+            {%- if press_type == release_types[0] -%}
+            {{- [scene_first_release, first_release_action] -}}
+            {%- elif press_type == release_types[1] -%}
+            {{- [scene_second_release, second_release_action] -}}
+            {%- elif press_type == release_types[2] -%}
+            {{- [scene_third_release, third_release_action] -}}
+            {%- elif press_type == release_types[3] -%}
+            {{- [scene_fourth_release, fourth_release_action] -}}
+            {%- elif press_type == release_types[4] -%}
+            {{- [scene_fifth_release, fifth_release_action] -}}
+            {%- else -%}
+            {{- ["", ""] -}}
             {%- endif -%}
       # choose the sequence to run based on the received button event
       - choose:
@@ -501,7 +518,7 @@ action:
                         service: input_text.set_value
                         data:
                           entity_id: !input helper_last_controller_event
-                          value: '{{ {"press_type":press_type,"last_triggered":now() | string,"last_dim_direction":last_dim_direction} | to_json }}'
+                          value: '{{ {"press_type":press_type,"last_triggered":now() | string,"last_dim_direction":current_dim_direction} | to_json }}'
                       - choose:
                           # if multi press events are enabled
                           - conditions:
@@ -521,8 +538,6 @@ action:
                                   - delay:
                                       milliseconds: "{{ adjusted_multi_press_delay }}"
                                   # run the short press action
-                      - variables:
-                          pressed_scene: "{{ scene_first_release }}"
                       - *fire-trigger-event
                       # run the toggle dim entity action
                       - choose:
@@ -579,18 +594,19 @@ action:
                                             - conditions:
                                                 - condition: template
                                                   value_template: >-
-                                                    {{ pressed_scene|length > 0 }}
+                                                    {{ pressed_scene_action[0]|length > 0 }}
                                               sequence:
                                                 - service: scene.turn_on
                                                   target:
-                                                    entity_id: "{{ pressed_scene }}"
+                                                    entity_id: "{{ pressed_scene_action[0] }}"
                                       # run the custom action
                                       - choose:
-                                          - conditions:
-                                              - condition: template
-                                                value_template: >-
-                                                  {{ first_release_action|length > 0 }}
-                                            sequence: !input action_button_short_release
+                                          - sequence: !input action_button_short_release
+                                            <<: &action-press-sequence
+                                              conditions:
+                                                - condition: template
+                                                  value_template: >-
+                                                    {{ pressed_scene_action[1]|length > 0 }}
                         default: *action-scene-first-release-action
                   - conditions:
                       - condition: template
@@ -598,9 +614,6 @@ action:
                           {{ press_type == release_types[1] }}
                     sequence:
                       # store the second press event in the last controller event helper
-                      - variables:
-                          pressed_scene: "{{ scene_second_release }}"
-                          pressed_action: "{{ second_release_action }}"
                       - &fire-event-update-helper
                         choose:
                           - conditions: []
@@ -612,12 +625,8 @@ action:
                           sequence:
                             - *scene-press-sequence
                             - choose:
-                                - sequence: !input action_button_double_press
-                                  <<: &action-press-sequence
-                                    conditions:
-                                      - condition: template
-                                        value_template: >-
-                                          {{ pressed_action|length > 0 }}
+                                - <<: *action-press-sequence
+                                  sequence: !input action_button_double_press
                             - &action-repeat-delay
                               choose:
                                 - conditions:
@@ -634,9 +643,6 @@ action:
                         value_template: >-
                           {{ press_type == release_types[2] }}
                     sequence:
-                      - variables:
-                          pressed_scene: "{{ scene_third_release }}"
-                          pressed_action: "{{ third_release_action }}"
                       - *fire-event-update-helper
                       # run the third press action
                       - repeat:
@@ -652,9 +658,6 @@ action:
                         value_template: >-
                           {{ press_type == release_types[3] }}
                     sequence:
-                      - variables:
-                          pressed_scene: "{{ scene_fourth_release }}"
-                          pressed_action: "{{ fourth_release_action }}"
                       - *fire-event-update-helper
                       # run the fourth press action
                       - repeat:
@@ -670,9 +673,6 @@ action:
                         value_template: >-
                           {{ press_type == release_types[4] }}
                     sequence:
-                      - variables:
-                          pressed_scene: "{{ scene_fifth_release }}"
-                          pressed_action: "{{ fifth_release_action }}"
                       - *fire-event-update-helper
                       # run the fifth press action
                       - repeat:
@@ -694,10 +694,7 @@ action:
                   - conditions:
                       - condition: template
                         value_template: >-
-                          {{ button_hold_to_dim }}
-                      - condition: template
-                        value_template: >-
-                          {{ (hold_to_dim_entity | string | length) > 0 }}
+                          {{ button_hold_to_dim and toggle_dim_entity_configured }}
                     sequence:
                       - variables:
                           current_brightness: >-
@@ -711,7 +708,7 @@ action:
                             sequence:
                               - variables:
                                   new_brightness_value: "{{ -hold_to_dim_brightness_step }}"
-                                  last_dim_direction: "down"
+                                  current_dim_direction: "down"
                               - &hold-to-dim-brightness-change
                                 choose:
                                   - conditions: []
@@ -720,21 +717,11 @@ action:
                                         data:
                                           brightness_step: "{{ new_brightness_value }}"
                                       - *inputtext-update
-                          - conditions:
-                              - condition: template
-                                value_template: >-
-                                  {{ current_brightness == 0 }}
-                            sequence: &hold-to-dim-brightness-up
-                              - variables:
-                                  new_brightness_value: "{{ hold_to_dim_brightness_step }}"
-                                  last_dim_direction: "up"
-                              - *hold-to-dim-brightness-change
-                          - conditions:
-                              - condition: template
-                                value_template: >-
-                                  {{ (last_dim_direction == "up" and current_brightness < 255) or current_brightness < 5 }}
-                            sequence: *hold-to-dim-brightness-up
-                        default: *hold-to-dim-brightness-up
+                        default:
+                          - variables:
+                              new_brightness_value: "{{ hold_to_dim_brightness_step }}"
+                              current_dim_direction: "up"
+                          - *hold-to-dim-brightness-change
               - choose:
                   # if looping is enabled, loop the action for a finite number of iterations
                   - conditions:
