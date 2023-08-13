@@ -1,0 +1,573 @@
+# Blueprint metadata
+blueprint:
+  name: Moes Scene Switch (Multi-press)
+  description: |
+    # Moes Scene Switch - Multi-press Controller v0.1
+  domain: automation
+  input:
+    controller_device:
+      name: (ZHA) Button Device
+      description: The button device to use for the automation (do not fill if using Zigbee2MQTT).
+      default: ""
+      selector:
+        device:
+          entity:
+            - domain: sensor
+              device_class: battery
+              <<: &int-zha
+                integration: zha
+          filter:
+            - <<: *int-zha
+              manufacturer: "_TZ3000_gbm10jnj"
+              model: "TS0043"
+            - <<: *int-zha
+              manufacturer: "_TZ3000_5e235jpa"
+              model: "TS0042"
+    button_endpoint_id:
+      name: (Required) Button Number
+      description: The button number to control for multi-gang
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 9
+          <<: &num-selector-slider
+            mode: slider
+            step: 1
+    helper_last_controller_event:
+      name: (Required) Helper - Input Text
+      description: Input Text used to store the last event fired by the controller. You will need to manually create a text input entity for this, please read the blueprint Additional Notes for more info.
+      default: ""
+      selector:
+        entity:
+          filter:
+            domain: input_text
+    controlled_light_entity:
+      name: (Optional) Toggle/Dim Light Entity
+      description: Light entity to be toggled on first press as configured below.
+      default: ""
+      selector:
+        entity:
+          filter:
+            domain: light
+    scene_first_release:
+      name: (Optional) First Press/Release Scene
+      description: Select a scene to be activated on the first button press/release.
+      <<: &scene-selector
+        default: ""
+        selector:
+          entity:
+            filter:
+              - domain: scene
+    scene_second_release:
+      <<: *scene-selector
+      name: (Optional) Second Press/Release Scene
+      description: Select a scene to be activated on the second button press/release.
+    scene_third_release:
+      <<: *scene-selector
+      name: (Optional) Third Press/Release Scene
+      description: Select a scene to be activated on the third button press/release.
+    scene_fourth_release:
+      <<: *scene-selector
+      name: (Optional) Fourth Press/Release Scene
+      description: Select a scene to be activated on the fourth button press/release.
+    scene_fifth_release:
+      <<: *scene-selector
+      name: (Optional) Fifth Press/Release Scene
+      description: Select a scene to be activated on the fifth button press/release.
+    button_toggle_controlled_light_entity_first_press:
+      name: (Optional) Enable Toggle Light on First Press
+      description: Enable or disable the behaviour of toggling the Toggle/Dim Light Entity on first press.
+      <<: &bool-selector-true
+        default: true
+        selector:
+          boolean:
+    button_multi_press_enabled:
+      <<: *bool-selector-true
+      name: (Optional) Enable button multi press events
+      description: Choose whether or not to enable the virtual multi press events for the button. Leave this on if you are providing actions for the button second/third/fourth/fifth press events.
+    # inputs for custom actions
+    action_button_short_release:
+      name: (Optional) Short button press release. (First)
+      description: >-
+        Action to run on short button press release.
+        There is no need to use this action if using the light toggle options unless you want to activate a particular scene.
+      <<: &action-selector
+        default: []
+        selector:
+          action:
+    action_button_double_press:
+      <<: *action-selector
+      name: (Optional) Button second press
+      description: Action to run on the release of a second button press.
+    action_button_triple_press:
+      <<: *action-selector
+      name: (Optional) Button third press
+      description: Action to run on the release of a third button press.
+    action_button_quadruple_press:
+      <<: *action-selector
+      name: (Optional) Button fourth press
+      description: Action to run on the release of a fourth button press.
+    action_button_quintuple_press:
+      <<: *action-selector
+      name: (Optional) Button fifth press
+      description: Action to run on the release of a fifth button press.
+    action_button_long_repeat:
+      <<: *action-selector
+      name: (ADVANCED) Button long hold
+      description: >-
+        Action to run on long button hold.
+    action_button_long_release:
+      <<: *action-selector
+      name: (ADVANCED) Long button press release
+      description: Action to run on button release after long press.
+    # helpers used to properly recognize the remote button events
+    helper_multi_press_delay:
+      name: (ADVANCED) Multi Press Window
+      description: Max time window between button presses for multi-press events. Increase this value if multi-press actions aren't recognised, decrease it if they're recognised too much.
+      default: 2500
+      selector:
+        number:
+          min: 1000
+          max: 43200000
+          step: 10
+          <<: &num-selector-box
+            unit_of_measurement: milliseconds
+            mode: box
+    resume_light_state_when_off:
+      name: (ADVANCED) Resume previous light state when off.
+      description: >-
+        Enable to perform a simple `light.turn_on` service when the light is off.
+      <<: &bool-selector-false
+        default: false
+        selector:
+          boolean:
+    toggle_controlled_light_entity_brightness:
+      name: (ADVANCED) First Press Toggle Brightness %
+      description: The Brightness % to set the Toggle/Dim Light Entity to when turning on with a first press toggle. (0 uses the previous brightness)
+      default: 0
+      selector:
+        number:
+          <<: *num-selector-slider
+          min: 0
+          max: 100
+    toggle_controlled_light_entity_transition:
+      name: (ADVANCED) Transition time for light on/off
+      description: >-
+        Transition time for switching the `Toggle/Dim Light Entity` on/off (where supported)
+      default: 1
+      selector:
+        number:
+          <<: *num-selector-slider
+          min: 0
+          max: 10
+          unit_of_measurement: seconds
+    button_multi_press_always_fire_first_release:
+      <<: *bool-selector-true
+      name: (ADVANCED) Always fire first short button release
+      description: Choose whether or not to always fire the first short button release action without waiting for the Multi Press delay.
+    action_repeat_on_press_count:
+      name: (ADVANCED) Repeat actions on multi-presses
+      description: >-
+        Repeats actions X times, on each press after the first.
+        Useful for scene actions to account for device delays to ensure the final press is activated.
+      default: 3
+      selector:
+        number:
+          <<: *num-selector-slider
+          min: 0
+          max: 5
+          unit_of_measurement: repetitions
+    delay_between_action_repeats:
+      name: (ADVANCED) Delay between multi-press action repititions
+      description: If you have issues with the multi-press action repititions try increasing this a bit.
+      default: 600
+      <<: &millisecond-selector
+        selector:
+          number:
+            <<: *num-selector-box
+            min: 0
+            max: 5000
+            step: 1
+    helper_debounce_delay:
+      <<: *millisecond-selector
+      name: (ADVANCED) Internal Debounce Delay
+      description: By default you should probably leave this at 0, but you might need to increase it in certain situations.
+      default: 0
+# Automation schema
+variables:
+  # convert input tags to variables, to be used in templates
+  button_multi_press_enabled: !input button_multi_press_enabled
+  button_multi_press_always_fire_first_release: !input button_multi_press_always_fire_first_release
+  helper_last_controller_event: !input helper_last_controller_event
+  helper_multi_press_delay: !input helper_multi_press_delay
+  button_toggle_controlled_light_entity_first_press: !input button_toggle_controlled_light_entity_first_press
+  toggle_controlled_light_entity_brightness: !input toggle_controlled_light_entity_brightness
+  controlled_light_entity: !input controlled_light_entity
+  toggle_controlled_light_entity_transition: !input toggle_controlled_light_entity_transition
+  helper_debounce_delay: !input helper_debounce_delay
+  delay_between_action_repeats: !input delay_between_action_repeats
+  action_repeat_on_press_count: !input action_repeat_on_press_count
+  first_release_action: !input action_button_short_release
+  second_release_action: !input action_button_double_press
+  third_release_action: !input action_button_triple_press
+  fourth_release_action: !input action_button_quadruple_press
+  fifth_release_action: !input action_button_quintuple_press
+  scene_first_release: !input scene_first_release
+  scene_second_release: !input scene_second_release
+  scene_third_release: !input scene_third_release
+  scene_fourth_release: !input scene_fourth_release
+  scene_fifth_release: !input scene_fifth_release
+  resume_light_state_when_off: !input resume_light_state_when_off
+  # adjusted debounce delay so that the resulting multi press delay is exactly as specified by the user when running the action, taking also account of debouncing
+  # make sure it never goes below the minimum multi press delay
+  adjusted_multi_press_delay: "{{ [helper_multi_press_delay - helper_debounce_delay, 100] | max }}"
+  # mapping between actions and integrations
+  button_short_release: [remote_button_short_press, remote_button_double_press]
+  button_long_repeat: [repeat, on_hold, hold]
+  button_long_release: [long_release, on_long_release, release]
+  # build data to send within a controller event
+  controller_device: !input controller_device
+  controller_id: >-
+    {{controller_device}}
+  action_repeat_on_press: "{{ action_repeat_on_press_count > 0 }}"
+  release_types:
+    - "short_release"
+    - "second_release"
+    - "third_release"
+    - "fourth_release"
+    - "fifth_release"
+  controlled_light_entity_configured: >-
+    {{ (controlled_light_entity | string | length) > 0 }}
+  toggle_controlled_light_entity_first_press_enabled: >-
+    {{ button_toggle_controlled_light_entity_first_press and controlled_light_entity_configured }}
+trigger_variables:
+  button_endpoint_id: !input button_endpoint_id
+mode: restart
+max_exceeded: silent
+trigger:
+  - event_data:
+      command: remote_button_short_press
+      <<: &tr-event-data
+        device_id: !input controller_device
+        endpoint_id: "{{ button_endpoint_id }}"
+    <<: &tr-zha-event
+      platform: event
+      event_type:
+        - zha_event
+  - <<: *tr-zha-event
+    event_data:
+      <<: *tr-event-data
+      command: remote_button_double_press
+  - <<: *tr-zha-event
+    event_data:
+      <<: *tr-event-data
+      command: remote_button_long_press
+condition:
+  - condition: and
+    conditions:
+      # check that the button event is not empty
+      - condition: template
+        value_template: >-
+          {%- set trigger_action -%}
+          {% if "payload" in trigger %}
+          {{ trigger.payload }}
+          {% elif "type" in trigger.event.data %}
+          {{ trigger.event.data.type }}
+          {% else %}
+          {{ trigger.event.data.command }}
+          {% endif %}
+          {%- endset -%}
+          {{ trigger_action not in ["","None"] }}
+action:
+  # Check config
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ (helper_last_controller_event | length < 1) or state_attr(helper_last_controller_event, 'max') < 500 }}
+        sequence:
+          - service: persistent_notification.create
+            data:
+              message: >-
+                Invalid Config: "Helper - Last Controller Event" is not set or too short.
+                Set max length to 500 or more.
+              title: Moes Scene Switch
+    default:
+      # debouncing - when automation is triggered multiple times, the last automation run is the one which completes execution, due to mode restart
+      # therefore previous runs must wait for the debounce delay before executing any other action
+      # if the delay expires and the automation is still running it means it's the last run and execution can continue
+      - delay:
+          milliseconds: "{{ helper_debounce_delay }}"
+      # extract button event from the trigger
+      # provide a single string value to check against
+      - variables:
+          trigger_action: >-
+            {% if "payload" in trigger %}
+            {{ trigger.payload }}
+            {% elif "type" in trigger.event.data %}
+            {{ trigger.event.data.type }}
+            {% else %}
+            {{ trigger.event.data.command }}
+            {% endif %}
+          helper_valid: '{{ helper_last_controller_event is not none and (states(helper_last_controller_event)|length) and (states(helper_last_controller_event) | regex_match("^[{\[]{1}([,:{}\[\]0-9.\-+Eaeflnr-u \n\r\t]|\".*?\")+[}\]]{1}$")) }}'
+          helper_state: "{{ states(helper_last_controller_event) }}"
+          trigger_delta: >-
+            {% if helper_valid %}
+            {% set trig_time = helper_state.last_triggered %}
+            {% else %}
+            {% set trig_time = "1970-01-01 00:00:00" %}
+            {% endif %}
+            {{ (as_timestamp(now()) - as_timestamp(trig_time)) * 1000 }}
+          last_press_type: >-
+            {% if helper_valid and "press_type" in helper_state %}
+            {{ helper_state.press_type }}
+            {% else %}
+            {{ "None" }}
+            {% endif %}
+          trigger_valid: >-
+            {{ (trigger_delta | int) <= (helper_multi_press_delay | int) }}
+          multipress_valid: >-
+            {{ button_multi_press_enabled and trigger_valid }}
+          press_type: >-
+            {%- if (trigger_action | string) in button_short_release -%}
+              {%- if multipress_valid and (release_types[0] == last_press_type) and ((scene_second_release|length) > 0 or (second_release_action|length) > 0) -%}
+              {{- release_types[1] -}}
+              {%- elif multipress_valid and (release_types[1] == last_press_type) and ((scene_third_release|length) > 0 or (third_release_action|length) > 0) -%}
+              {{- release_types[2] -}}
+              {%- elif multipress_valid and (release_types[2] == last_press_type) and ((scene_fourth_release|length) > 0 or (fourth_release_action|length) > 0) -%}
+              {{- release_types[3] -}}
+              {%- elif multipress_valid and (release_types[3] == last_press_type) and ((scene_fifth_release|length) > 0 or (fifth_release_action|length) > 0) -%}
+              {{- release_types[4] -}}
+              {%- else -%}
+              {{- release_types[0] -}}
+              {%- endif -%}
+            {%- elif (trigger_action | string) in button_long_repeat -%}
+            {{- "long_repeat" -}}
+            {%- elif (trigger_action | string) in button_long_release -%}
+            {{- "long_release" -}}
+            {%- else -%}
+            {{- "" -}}
+            {%- endif -%}
+          pressed_scene_action: >-
+            {%- if press_type == release_types[0] -%}
+            {{- [scene_first_release, first_release_action] -}}
+            {%- elif press_type == release_types[1] -%}
+            {{- [scene_second_release, second_release_action] -}}
+            {%- elif press_type == release_types[2] -%}
+            {{- [scene_third_release, third_release_action] -}}
+            {%- elif press_type == release_types[3] -%}
+            {{- [scene_fourth_release, fourth_release_action] -}}
+            {%- elif press_type == release_types[4] -%}
+            {{- [scene_fifth_release, fifth_release_action] -}}
+            {%- else -%}
+            {{- ["", ""] -}}
+            {%- endif -%}
+      # choose the sequence to run based on the received button event
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ press_type in release_types }}
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: >-
+                          {{ press_type == release_types[0] }}
+                    sequence:
+                      # update helper
+                      - &inputtext-update
+                        service: input_text.set_value
+                        data:
+                          entity_id: !input helper_last_controller_event
+                          value: '{{ {"press_type":press_type,"last_triggered":now() | string} | to_json }}'
+                      - choose:
+                          # if multi press events are enabled
+                          - conditions:
+                              - condition: template
+                                value_template: >-
+                                  {{ button_multi_press_enabled }}
+                            sequence:
+                              # Optionally skip delay to always fire the first release
+                              - choose:
+                                  - conditions:
+                                      - condition: template
+                                        value_template: >-
+                                          {{ button_multi_press_always_fire_first_release }}
+                                    sequence: []
+                                default:
+                                  # if the second press is received, automation is restarted
+                                  - delay:
+                                      milliseconds: "{{ adjusted_multi_press_delay }}"
+                                  # run the short press action
+                      # fire the event
+                      - &fire-trigger-event
+                        event: ahb_controller_event
+                        event_data:
+                          controller: "{{ controller_id }}"
+                          action: "button_{{press_type}}"
+                      # run the toggle dim entity action
+                      - choose:
+                          - conditions:
+                              - &toggle-dim-entity-condition
+                                condition: template
+                                value_template: >-
+                                  {{ toggle_controlled_light_entity_first_press_enabled }}
+                            sequence:
+                              - choose:
+                                  - conditions:
+                                      - condition: template
+                                        value_template: >-
+                                          {{ expand(controlled_light_entity) | selectattr("state", "eq", "on") | list | count > 0 }}
+                                      - condition: template
+                                        value_template: >-
+                                          {{ not button_multi_press_enabled or not multipress_valid }}
+                                    sequence:
+                                      - service: input_text.set_value
+                                        data:
+                                          entity_id: !input helper_last_controller_event
+                                          value: ""
+                                      - service: light.turn_off
+                                        target:
+                                          entity_id: "{{ controlled_light_entity }}"
+                                        data:
+                                          transition: "{{ toggle_controlled_light_entity_transition }}"
+                                default: &action-scene-first-release-action
+                                  - choose:
+                                      - conditions:
+                                          - condition: template
+                                            value_template: >-
+                                              {{ resume_light_state_when_off and (not button_multi_press_enabled or not multipress_valid) }}
+                                        sequence:
+                                          - &light-on
+                                            service: light.turn_on
+                                            target:
+                                              entity_id: "{{ controlled_light_entity }}"
+                                    default:
+                                      - default:
+                                          - choose:
+                                              - conditions:
+                                                  - *toggle-dim-entity-condition
+                                                sequence:
+                                                  - <<: *light-on
+                                                    data: >
+                                                      {% if (toggle_controlled_light_entity_brightness | int) > 0 %}
+                                                      {{ {"transition": toggle_controlled_light_entity_transition, "brightness_pct": (toggle_controlled_light_entity_brightness | int)} }}
+                                                      {% else %}
+                                                      {{ {"transition": toggle_controlled_light_entity_transition } }}
+                                                      {% endif %}
+                                        <<: &scene-press-sequence
+                                          choose:
+                                            - conditions:
+                                                - condition: template
+                                                  value_template: >-
+                                                    {{ pressed_scene_action[0]|length > 0 }}
+                                              sequence:
+                                                - service: scene.turn_on
+                                                  target:
+                                                    entity_id: "{{ pressed_scene_action[0] }}"
+                                      # run the custom action
+                                      - choose:
+                                          - sequence: !input action_button_short_release
+                                            <<: &action-press-sequence
+                                              conditions:
+                                                - condition: template
+                                                  value_template: >-
+                                                    {{ pressed_scene_action[1]|length > 0 }}
+                        default: *action-scene-first-release-action
+                  - conditions:
+                      - condition: template
+                        value_template: >-
+                          {{ press_type == release_types[1] }}
+                    sequence:
+                      # store the second press event in the last controller event helper
+                      - &fire-event-update-helper
+                        choose:
+                          - conditions: []
+                            sequence:
+                              - *inputtext-update
+                              - *fire-trigger-event
+                      # run the second press action
+                      - repeat:
+                          sequence:
+                            - *scene-press-sequence
+                            - choose:
+                                - <<: *action-press-sequence
+                                  sequence: !input action_button_double_press
+                            - &action-repeat-delay
+                              choose:
+                                - conditions:
+                                    - condition: template
+                                      value_template: >-
+                                        {{ action_repeat_on_press }}
+                                  sequence:
+                                    - delay:
+                                        milliseconds: "{{ delay_between_action_repeats }}"
+                          <<: &action-scene-sequence
+                            count: "{{action_repeat_on_press_count}}"
+                  - conditions:
+                      - condition: template
+                        value_template: >-
+                          {{ press_type == release_types[2] }}
+                    sequence:
+                      - *fire-event-update-helper
+                      # run the third press action
+                      - repeat:
+                          <<: *action-scene-sequence
+                          sequence:
+                            - *scene-press-sequence
+                            - choose:
+                                - <<: *action-press-sequence
+                                  sequence: !input action_button_triple_press
+                            - *action-repeat-delay
+                  - conditions:
+                      - condition: template
+                        value_template: >-
+                          {{ press_type == release_types[3] }}
+                    sequence:
+                      - *fire-event-update-helper
+                      # run the fourth press action
+                      - repeat:
+                          <<: *action-scene-sequence
+                          sequence:
+                            - *scene-press-sequence
+                            - choose:
+                                - <<: *action-press-sequence
+                                  sequence: !input action_button_quadruple_press
+                            - *action-repeat-delay
+                  - conditions:
+                      - condition: template
+                        value_template: >-
+                          {{ press_type == release_types[4] }}
+                    sequence:
+                      - *fire-event-update-helper
+                      # run the fifth press action
+                      - repeat:
+                          <<: *action-scene-sequence
+                          sequence:
+                            - *scene-press-sequence
+                            - choose:
+                                - <<: *action-press-sequence
+                                  sequence: !input action_button_quintuple_press
+                            - *action-repeat-delay
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ press_type == "long_repeat" }}
+            sequence:
+              - *fire-event-update-helper
+              # run the custom action
+              - choose:
+                  - conditions: []
+                    sequence: !input action_button_long_repeat
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ press_type == "long_release" }}
+            sequence:
+              - *fire-event-update-helper
+              # run the custom action
+              - choose:
+                  - conditions: []
+                    sequence: !input action_button_long_release
