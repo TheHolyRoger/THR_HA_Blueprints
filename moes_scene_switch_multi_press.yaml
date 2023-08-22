@@ -1,8 +1,8 @@
 # Blueprint metadata
 blueprint:
-  name: Moes Scene Switch (Multi-press)
+  name: Moes / Tuya Scene Switch (Multi-press)
   description: |
-    # Moes Scene Switch - Multi-press Controller v0.1
+    # Moes / Tuya Scene Switch - Multi-press Controller v0.1
   domain: automation
   input:
     controller_device:
@@ -17,12 +17,72 @@ blueprint:
               <<: &int-zha
                 integration: zha
           filter:
-            - <<: *int-zha
-              manufacturer: "_TZ3000_gbm10jnj"
-              model: "TS0043"
-            - <<: *int-zha
-              manufacturer: "_TZ3000_5e235jpa"
-              model: "TS0042"
+            # 1 Gang Wall Remote
+            - manufacturer: "_TYZB02_keyjqthh"
+              <<: &ws-1
+                <<: *int-zha
+                model: "TS0041"
+            - <<: *ws-1
+              manufacturer: "_TZ3000_tk3s5tyg"
+            - <<: *ws-1
+              manufacturer: "_TZ3000_fkp5zyho"
+            - <<: *ws-1
+              manufacturer: "_TZ3000_axpdxqgu"
+            - <<: *ws-1
+              manufacturer: "_TZ3000_peszejy7"
+            - <<: *ws-1
+              manufacturer: "_TZ3000_pzui3skt"
+            - <<: *ws-1
+              manufacturer: "_TZ3000_f97vq5mn"
+            # 2 Gang Wall Remote
+            - manufacturer: "_TZ3000_5e235jpa"
+              <<: &ws-2
+                <<: *int-zha
+                model: "TS0042"
+            - <<: *ws-2
+              manufacturer: "_TZ3000_owgcnkrh"
+            - <<: *ws-2
+              manufacturer: "_TYZB02_keyjhapk"
+            - <<: *ws-2
+              manufacturer: "_TZ3000_oikiyf3b"
+            - <<: *ws-2
+              manufacturer: "_TZ3000_dfgbtub0"
+            - <<: *ws-2
+              manufacturer: "_TZ3000_h1c2eamp"
+            - <<: *ws-2
+              manufacturer: "_TZ3400_keyjhapk"
+            - <<: *ws-2
+              manufacturer: "_TZ3000_fkvaniuu"
+            # 3 Gang Wall Remote
+            - manufacturer: "_TZ3000_gbm10jnj"
+              <<: &ws-3
+                <<: *int-zha
+                model: "TS0043"
+            - <<: *ws-3
+              manufacturer: "_TZ3000_a7ouggvs"
+            - <<: *ws-3
+              manufacturer: "_TYZB02_key8kk7r"
+            - <<: *ws-3
+              manufacturer: "_TZ3000_qzjcsmar"
+            - <<: *ws-3
+              manufacturer: "_TZ3000_rrjr1q0u"
+            - <<: *ws-3
+              manufacturer: "_TZ3000_w8jwkczz"
+            - <<: *ws-3
+              manufacturer: "_TZ3000_yw5tvzsk"
+            # 4 Gang Wall Remote
+            - manufacturer: "_TZ3000_vp6clf9d"
+              <<: &ws-4
+                <<: *int-zha
+                model: "TS0044"
+            - <<: *ws-4
+              manufacturer: "_TZ3000_xabckq1v"
+            - <<: *ws-4
+              manufacturer: "_TZ3000_wkai4ga5"
+            - <<: *ws-4
+              manufacturer: "_TZ3000_ufhtxr59"
+            - <<: *ws-4
+              manufacturer: "_TZ3000_ee8nrt2l"
     button_endpoint_id:
       name: (Required) Button Number
       description: The button number to control for multi-gang
