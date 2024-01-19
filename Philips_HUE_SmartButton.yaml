@@ -19,12 +19,18 @@ blueprint:
               device_class: battery
               integration: zha
           filter:
-            - integration: hue
-              manufacturer: &mfctr "Signify Netherlands B.V."
-              model: "Hue Smart button (ROM001)"
-            - integration: zha
-              manufacturer: *mfctr
-              model: "ROM001"
+            - manufacturer: &mfctr1 "Signify Netherlands B.V."
+              <<: &flt-hue
+                integration: hue
+                model: "Hue Smart button (ROM001)"
+            - manufacturer: &mfctr2 "Philips"
+              <<: *flt-hue
+            - manufacturer: *mfctr1
+              <<: &flt-zha
+                integration: zha
+                model: "ROM001"
+            - manufacturer: *mfctr2
+              <<: *flt-zha
     controller_topic:
       name: (Zigbee2MQTT) Button `/action` Topic
       description: The MQTT topic to use for the automation (only fill if using Zigbee2MQTT)
@@ -712,7 +718,7 @@ action:
                               - &hold-to-dim-brightness-change
                                 choose:
                                   - conditions: []
-                                    sequence: 
+                                    sequence:
                                       - <<: *light-on
                                         data:
                                           brightness_step: "{{ new_brightness_value }}"
