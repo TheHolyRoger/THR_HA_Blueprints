@@ -361,10 +361,12 @@ display:
     flip_y: False
     lambda: |-
       unsigned long current_seconds = millis()/1000ULL;
-      if (id(last_action) + ${screen_timeout_seconds}ULL < current_seconds) {
+      if (id(last_action) + ${screen_timeout_seconds}ULL < current_seconds && !(id(alarm_countdown) > 0 && id(alarm_delay) > 0)) {
         it.fill(COLOR_OFF);
+        id(alarm_display).turn_off();
         return;
       }
+      id(alarm_display).turn_on();
       int hidden_x = 64 - ((id(hidden_string).length() * 8) / 2);
       int half_box = (((${max_code_length} * 8) / 2) + 5);
       int box_x = 64 - half_box;
