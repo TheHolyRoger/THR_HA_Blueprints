@@ -26,6 +26,12 @@ blueprint:
             - manufacturer: &mfctr2 "Philips"
               <<: *flt-hue
             - manufacturer: *mfctr1
+              <<: &flt-hue2
+                integration: hue
+                model: "Hue Smart button (RDM003)"
+            - manufacturer: *mfctr2
+              <<: *flt-hue2
+            - manufacturer: *mfctr1
               <<: &flt-zha
                 integration: zha
                 model: "ROM001"
