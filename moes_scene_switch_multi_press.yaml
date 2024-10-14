@@ -83,6 +83,12 @@ blueprint:
               manufacturer: "_TZ3000_ufhtxr59"
             - <<: *ws-4
               manufacturer: "_TZ3000_ee8nrt2l"
+    controller_topic:
+      name: (Zigbee2MQTT) Button `/action` Topic
+      description: The MQTT topic to use for the automation (only fill if using Zigbee2MQTT)
+      default: ""
+      selector:
+        text:
     button_endpoint_id:
       name: (Required) Button Number
       description: The button number to control for multi-gang
@@ -279,17 +285,35 @@ variables:
   scene_fourth_release: !input scene_fourth_release
   scene_fifth_release: !input scene_fifth_release
   resume_light_state_when_off: !input resume_light_state_when_off
+  button_endpoint_id: !input button_endpoint_id
   # adjusted debounce delay so that the resulting multi press delay is exactly as specified by the user when running the action, taking also account of debouncing
   # make sure it never goes below the minimum multi press delay
   adjusted_multi_press_delay: "{{ [helper_multi_press_delay - helper_debounce_delay, 100] | max }}"
   # mapping between actions and integrations
-  button_short_release: [remote_button_short_press, remote_button_double_press]
+  button_short_release:
+    - remote_button_short_press
+    - remote_button_double_press
+    - "{{ button_endpoint_id }}_single"
+    - "{{ button_endpoint_id }}_double"
   button_long_repeat: [repeat, on_hold, hold]
   button_long_release: [long_release, on_long_release, release]
   # build data to send within a controller event
+  controller_topic: !input controller_topic
+  controller_topic_internal: >-
+    {% if controller_topic|length > 0 %}
+    {{ controller_topic }}
+    {% else %}
+    {{ "empty_mqtt_topic_unused" }}
+    {% endif %}
   controller_device: !input controller_device
   controller_id: >-
+    {% if controller_topic|length > 0 %}
+    {{ controller_topic }}
+    {% else %}
     {{controller_device}}
+    {% endif %}
+  is_z2m: >-
+    {{ (controller_topic|length > 0) }}
   action_repeat_on_press: "{{ action_repeat_on_press_count > 0 }}"
   release_types:
     - "short_release"
@@ -302,6 +326,13 @@ variables:
   toggle_controlled_light_entity_first_press_enabled: >-
     {{ button_toggle_controlled_light_entity_first_press and controlled_light_entity_configured }}
 trigger_variables:
+  controller_topic: !input controller_topic
+  controller_topic_internal: >-
+    {% if controller_topic|length > 0 %}
+    {{ controller_topic }}
+    {% else %}
+    {{ "empty_mqtt_topic_unused" }}
+    {% endif %}
   button_endpoint_id: !input button_endpoint_id
 mode: restart
 max_exceeded: silent
@@ -323,6 +354,12 @@ trigger:
     event_data:
       <<: *tr-event-data
       command: remote_button_long_press
+  - payload: "{{ button_endpoint_id }}_single"
+    <<: &tr-mqtt-event
+      platform: mqtt
+      topic: "{{ controller_topic_internal }}"
+  - <<: *tr-mqtt-event
+    payload: "{{ button_endpoint_id }}_double"
 condition:
   - condition: and
     conditions:
@@ -352,6 +389,16 @@ action:
               message: >-
                 Invalid Config: "Helper - Last Controller Event" is not set or too short.
                 Set max length to 500 or more.
+              title: Moes Scene Switch
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ is_z2m and ((controller_device | length) > 0) }}
+        sequence:
+          - action: persistent_notification.create
+            data:
+              message: >-
+                Invalid Config: Cannot have both MQTT topic and Controller Device set.
               title: Moes Scene Switch
     default:
       # debouncing - when automation is triggered multiple times, the last automation run is the one which completes execution, due to mode restart
