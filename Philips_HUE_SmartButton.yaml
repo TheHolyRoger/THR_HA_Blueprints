@@ -464,17 +464,21 @@ action:
           press_type: >-
             {%- if (trigger_action | string) in button_initial_press -%}
             {{- "initial_press" -}}
-            {%- elif (trigger_action | string) in button_short_release and (not is_z2m or (last_press_type | string not in button_long_repeat)) -%}
-              {%- if multipress_valid and (release_types[0] == last_press_type) and ((scene_second_release|length) > 0 or (second_release_action|length) > 0) -%}
-              {{- release_types[1] -}}
-              {%- elif multipress_valid and (release_types[1] == last_press_type) and ((scene_third_release|length) > 0 or (third_release_action|length) > 0) -%}
-              {{- release_types[2] -}}
-              {%- elif multipress_valid and (release_types[2] == last_press_type) and ((scene_fourth_release|length) > 0 or (fourth_release_action|length) > 0) -%}
-              {{- release_types[3] -}}
-              {%- elif multipress_valid and (release_types[3] == last_press_type) and ((scene_fifth_release|length) > 0 or (fifth_release_action|length) > 0) -%}
-              {{- release_types[4] -}}
+            {%- elif (trigger_action | string) in button_short_release -%}
+              {%- if (not is_z2m or (last_press_type | string not in button_long_repeat)) -%}
+                {%- if multipress_valid and (release_types[0] == last_press_type) and ((scene_second_release|length) > 0 or (second_release_action|length) > 0) -%}
+                {{- release_types[1] -}}
+                {%- elif multipress_valid and (release_types[1] == last_press_type) and ((scene_third_release|length) > 0 or (third_release_action|length) > 0) -%}
+                {{- release_types[2] -}}
+                {%- elif multipress_valid and (release_types[2] == last_press_type) and ((scene_fourth_release|length) > 0 or (fourth_release_action|length) > 0) -%}
+                {{- release_types[3] -}}
+                {%- elif multipress_valid and (release_types[3] == last_press_type) and ((scene_fifth_release|length) > 0 or (fifth_release_action|length) > 0) -%}
+                {{- release_types[4] -}}
+                {%- else -%}
+                {{- release_types[0] -}}
+                {%- endif -%}
               {%- else -%}
-              {{- release_types[0] -}}
+                {{- "long_release" -}}
               {%- endif -%}
             {%- elif (trigger_action | string) in button_long_repeat -%}
             {{- "long_repeat" -}}
