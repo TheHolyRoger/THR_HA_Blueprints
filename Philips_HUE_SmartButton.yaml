@@ -400,7 +400,7 @@ action:
             value_template: >-
               {{ (helper_last_controller_event | length < 1) or state_attr(helper_last_controller_event, 'max') < 500 }}
         sequence:
-          - service: persistent_notification.create
+          - action: persistent_notification.create
             data:
               message: >-
                 Invalid Config: "Helper - Last Controller Event" is not set or too short.
@@ -411,7 +411,7 @@ action:
             value_template: >-
               {{ is_z2m and ((controller_device | length) > 0) }}
         sequence:
-          - service: persistent_notification.create
+          - action: persistent_notification.create
             data:
               message: >-
                 Invalid Config: Cannot have both MQTT topic and Controller Device set.
@@ -527,7 +527,7 @@ action:
                     sequence:
                       # update helper
                       - &inputtext-update
-                        service: input_text.set_value
+                        action: input_text.set_value
                         data:
                           entity_id: !input helper_last_controller_event
                           value: '{{ {"press_type":press_type,"last_triggered":now() | string,"last_dim_direction":current_dim_direction} | to_json }}'
@@ -568,11 +568,11 @@ action:
                                         value_template: >-
                                           {{ not button_multi_press_enabled or not multipress_valid }}
                                     sequence:
-                                      - service: input_text.set_value
+                                      - action: input_text.set_value
                                         data:
                                           entity_id: !input helper_last_controller_event
                                           value: ""
-                                      - service: light.turn_off
+                                      - action: light.turn_off
                                         target:
                                           entity_id: "{{ hold_to_dim_entity }}"
                                         data:
@@ -585,7 +585,7 @@ action:
                                               {{ resume_light_state_when_off and (not button_multi_press_enabled or not multipress_valid) }}
                                         sequence:
                                           - &light-on
-                                            service: light.turn_on
+                                            action: light.turn_on
                                             target:
                                               entity_id: "{{ hold_to_dim_entity }}"
                                     default:
@@ -608,7 +608,7 @@ action:
                                                   value_template: >-
                                                     {{ pressed_scene_action[0]|length > 0 }}
                                               sequence:
-                                                - service: scene.turn_on
+                                                - action: scene.turn_on
                                                   target:
                                                     entity_id: "{{ pressed_scene_action[0] }}"
                                       # run the custom action

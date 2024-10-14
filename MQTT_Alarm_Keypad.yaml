@@ -89,11 +89,11 @@ action:
           - condition: template
             value_template: '{{ trigger.platform == "state" }}'
         sequence:
-          - service: mqtt.publish
+          - action: mqtt.publish
             data:
               qos: 0
               topic: "{{device_topic}}/set_alarm_state"
-              payload_template: >-
+              payload: >-
                 {{ {"state": trigger.to_state.state.replace('_', ' ')|title, "delay": trigger.to_state.attributes.delay}|to_json }}
               retain: false
           - choose:
@@ -101,7 +101,7 @@ action:
                   - condition: template
                     value_template: '{{ trigger.to_state.state == "disarmed" }}'
                 sequence:
-                  - service: light.turn_off
+                  - action: light.turn_off
                     data: {}
                     target:
                       entity_id: >-
@@ -111,7 +111,7 @@ action:
                   - condition: template
                     value_template: '{{ trigger.to_state.state in ["pending", "arming", "triggered"] }}'
                 sequence:
-                  - service: light.turn_on
+                  - action: light.turn_on
                     data: {}
                     target:
                       entity_id: "light.{{entity_id_prefix}}_warning_led"
@@ -119,11 +119,11 @@ action:
                   - condition: template
                     value_template: "{{ trigger.to_state.state.startswith('armed') }}"
                 sequence:
-                  - service: light.turn_off
+                  - action: light.turn_off
                     data: {}
                     target:
                       entity_id: "light.{{entity_id_prefix}}_warning_led"
-                  - service: light.turn_on
+                  - action: light.turn_on
                     data: {}
                     target:
                       entity_id: "light.{{entity_id_prefix}}_status_led"
@@ -141,7 +141,7 @@ action:
                   - condition: template
                     value_template: "{{ command_topic.startswith('alarm_arm') }}"
                 sequence:
-                  - service: "alarm_control_panel.{{command_topic}}"
+                  - action: "alarm_control_panel.{{command_topic}}"
                     data:
                       code: "{{keypad_code}}"
                     target:
@@ -162,12 +162,12 @@ action:
                               {% set alarm_state=states(alarm_entity) %}
                               {{ alarm_state != 'arming' and not alarm_state.startswith('armed') }}
                         sequence:
-                          - service: button.press
+                          - action: button.press
                             data: {}
                             target:
                               entity_id: "button.{{entity_id_prefix}}_alarm_code_failure"
                     default:
-                      - service: button.press
+                      - action: button.press
                         data: {}
                         target:
                           entity_id: "button.{{entity_id_prefix}}_alarm_code_success"
@@ -177,7 +177,7 @@ action:
                       - condition: template
                         value_template: "{{ command_topic == 'alarm_disarm' }}"
                     sequence:
-                      - service: alarm_control_panel.alarm_disarm
+                      - action: alarm_control_panel.alarm_disarm
                         data:
                           code: "{{keypad_code}}"
                         target:
@@ -196,12 +196,12 @@ action:
                               - condition: template
                                 value_template: "{{ states(alarm_entity) != 'disarmed' }}"
                             sequence:
-                              - service: button.press
+                              - action: button.press
                                 data: {}
                                 target:
                                   entity_id: "button.{{entity_id_prefix}}_alarm_code_failure"
                         default:
-                          - service: button.press
+                          - action: button.press
                             data: {}
                             target:
                               entity_id: "button.{{entity_id_prefix}}_alarm_code_success"
@@ -209,11 +209,11 @@ action:
                       - condition: template
                         value_template: "{{ trigger.topic.endswith('mqtt_status') }}"
                     sequence:
-                      - service: mqtt.publish
+                      - action: mqtt.publish
                         data:
                           qos: 0
                           topic: "{{device_topic}}/set_alarm_state"
-                          payload_template: >-
+                          payload: >-
                             {{ {"state": states(alarm_entity).replace('_', ' ')|title}|to_json }}
                           retain: false
           - choose:
