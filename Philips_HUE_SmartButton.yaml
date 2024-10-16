@@ -284,7 +284,7 @@ variables:
   # mapping between actions and integrations
   button_initial_press: [initial_press, on_press, press]
   button_short_release: [short_release, on_short_release, release]
-  button_long_repeat: [repeat, on_hold, hold]
+  button_long_repeat: [long_repeat, repeat, on_hold, hold]
   button_long_release: [long_release, on_long_release, release]
   # build data to send within a controller event
   controller_topic: !input controller_topic
